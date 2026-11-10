@@ -18,6 +18,7 @@ to run directly on a PC, with a new DirectX 12 renderer, sound and input in plac
 - [Fixes and improvements](#fixes-and-improvements)
 - [Enhancements](#enhancements)
 - [Options (F10)](#options-f10)
+- [Building from source](#building-from-source)
 - [If something goes wrong](#if-something-goes-wrong)
 - [Credits and legal](#credits-and-legal)
 
@@ -193,6 +194,37 @@ behind them instead of the game's grey-blue.
 | **Enhancements** | See [above](#enhancements) |
 
 "Defaults (this page)" resets the open tab.
+
+## Building from source
+
+The repository holds the port's own code, the renderer, the launcher and the
+[xboxrecomp](https://github.com/sp00nznet/xboxrecomp) toolkit. **It does not hold the game's code**: the recompiled C
+(`port/src/recomp/gen/`) is generated on your machine from your own copy of `default.xbe`.
+
+**You need:**
+- Linux (or WSL) with the **MinGW-w64** cross compiler (`x86_64-w64-mingw32-gcc`), **CMake 3.20+** and
+  **Python 3** with **capstone** (`pip install capstone`).
+- Your own NTSC-U disc's files.
+
+**1. Put the game files in `game/`** at the repository's root, so that `game/default.xbe` exists.
+
+**2. Generate the game's code** from it (about 2 minutes):
+```bash
+bash port/regen.sh
+```
+
+**3. Build** the game and the launcher:
+```bash
+cd port
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=../cmake/mingw-w64-x86_64.cmake -DCMAKE_BUILD_TYPE=Release -DHPPOA_RELEASE=ON
+cmake --build build -j"$(nproc)" --target hppoa hppoa_launcher
+```
+`hppoa.exe` and `hppoa_launcher.exe` are in `port/build/`. To run them, put them in a folder with a `game` folder
+as in [Installing](#installing). `tools/package_release.sh` (from `port/`) builds and packages the same zip the
+releases carry.
+
+Leave out `-DHPPOA_RELEASE=ON` for a development build: F6 opens the trainer and F12 captures a frame for debugging.
+`port/PORT_CHANGES.md` lists every change the port makes to the game, where it lives and how to switch it off.
 
 ## If something goes wrong
 

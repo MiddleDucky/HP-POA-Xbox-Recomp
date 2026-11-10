@@ -1,0 +1,69 @@
+HARRY POTTER AND THE PRISONER OF AZKABAN - PC PORT: CHANGES
+===========================================================
+
+v0.1.0 - the first release
+--------------------------
+
+The whole game, recompiled from the Xbox original to run natively on Windows.
+
+Picture
+- Any resolution, windowed, borderless or fullscreen; MSAA, SMAA and
+  anisotropic filtering; 60 fps (or the game's own 30).
+- True 16:9: the whole wider picture is drawn, the HUD sits at the screen's
+  edges, and the HUD's map and the inventory's map widen. 4:3 is still
+  there.
+- Post-processing, all neutral by default: bloom strength, sharpening,
+  saturation, vibrance, warmth, vignette, film grain and field of view.
+- Smooth stretched textures: skies and distant landscapes without blocks.
+- Colour-blind correction filters.
+
+Sound
+- The game's sound on your PC's speakers, stereo or 5.1 surround.
+
+Controls
+- Keyboard and mouse play as the controller, every key rebindable; Xbox
+  360 / One / Series controllers with adjustable deadzones, sensitivity
+  and vibration.
+- The game's button prompts show your keys when you play with the keyboard
+  and mouse: the HUD's buttons, the tutorials, the menus and the title
+  screen, switching as soon as you pick up the other device.
+- L3 + R3 opens the options on a controller.
+
+Fixes and improvements
+- The game runs at the right speed at 60 fps: its clock follows the frame
+  rate, so cutscenes and voice lines stay in step and dialogue plays as it
+  should.
+- Lips stop when the voice line does: no characters mouthing words in
+  silence after their line.
+- No orange skin in cutscenes: Malfoy, Crabbe and Goyle look as they do in
+  play, and faces no longer blink in the train cutscene.
+- The train's window light falls on the characters, not only the walls.
+- No getting stuck part way along a ledge while wall-sneaking in the
+  Carpe Retractum challenge at 60 fps.
+- Rooms beyond doorways always drawn: no rooms popping in as the camera
+  turns.
+- Areas load in time: no empty doorway while a room streams in, and no
+  black area after stepping straight back through a doorway.
+- The Glacius lever no longer turns black before it lights up.
+- 16:9: the HUD's map, the inventory's map, action prompts, button icons
+  in text, the menus' glow and highlight effect, the legal screen and a
+  cutscene shot (Night 0's corridor) put right.
+- The "Quit To Desktop" prompt no longer shows over the main menu's
+  attract movie.
+
+Enhancements (F10 > Enhancements, each can be turned on or off)
+On by default:
+- Responsive movement: quicker turning, the first step at once and full
+  speed through turns.
+- Each tutorial shown once.
+- The saving / loading compass hidden.
+Off by default:
+- Harry, Ron and Hermione's "time to turn in" lines left out.
+- Cutscenes without their black bars in 16:9.
+
+Also
+- Quit To Desktop on the main menu and the pause menu.
+
+Setup
+- A launcher to pick the picture, sound and control settings before
+  playing, and to check the game files against the disc's.
