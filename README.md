@@ -1,4 +1,4 @@
-# Harry Potter and the Prisoner of Azkaban — Xbox Recomp
+# Harry Potter and the Prisoner of Azkaban (NTSC) — Xbox PC Recomp
 
 A native Windows port of the original Xbox game, made by **static recompilation**: the game's own code, translated
 to run directly on a PC, with a new DirectX 12 renderer, sound and input in place of the console's.
