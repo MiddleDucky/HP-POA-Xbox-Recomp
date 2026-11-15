@@ -42,17 +42,3 @@ tools/split/output/
 port/build-release/
 port/dist/
 port/res/base_shaders.bin
-
-# HP: Prisoner of Azkaban port
-# the game's own files (bring your own disc) and the code generated from them (port/regen.sh)
-game/
-port/src/recomp/gen/*
-!port/src/recomp/gen/README.md
-# build and run output
-port/build*/
-port/dist/
-port/run/
-port/logs/
-port/shadercache/
-port/res/base_shaders.bin
-*.log

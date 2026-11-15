@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the Windows build of hppoa under Wine from run/ (the exes, game/ -> ../../game,
+# Run the Windows build of hppoa under Wine from build-win-trace/ (the exes, game/,
 # hppoa.toml, shadercache/). Wine hands these variables to the Windows process.
 #   RECOMP_TITLE_KEVENTS  events the title builds itself (D3D, worker threads)
 #   RECOMP_VBLANK         60 Hz vblank into the title's NV2A ISR
@@ -17,7 +17,7 @@
 #   RECOMP_WINDOW_SIZE=1920x1080 RECOMP_ASPECT=16:9 RECOMP_DISPLAY_MODE=borderless
 #   RECOMP_INTERNAL_HEIGHT=1440 RECOMP_MSAA=4 RECOMP_SMAA=1 RECOMP_ANISO=16
 #   RECOMP_HLE_D3D=0      old renderer: the emulated NV2A, drawn on the CPU
-cd "$(dirname "$0")/run" || exit 1
+cd "$(dirname "$0")/build-win-trace" || exit 1
 export RECOMP_TITLE_KEVENTS=1 RECOMP_VBLANK=1 RECOMP_AC97_READY=1
 export RECOMP_DSP_ACK=0x834D0810
 export RECOMP_PB_EXEC=1 RECOMP_FB_WINDOW=1

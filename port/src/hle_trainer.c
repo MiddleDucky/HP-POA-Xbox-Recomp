@@ -37,9 +37,20 @@
 #include <math.h>
 #include <stdlib.h>
 
-/* the register names (eax, esp, ...) the runtime macros expand to */
+/* MEM32 and the guest registers (g_eax, g_esp, ...) */
 #define RECOMP_GENERATED_CODE
 #include "recomp/gen/recomp_types.h"
+/* RECOMP_GENERATED_CODE also turns the bare names (eax, esp, ...) into the globals, which is right for lifted code
+ * and a trap in hand-written code: `uint32_t esp = g_esp;` became `uint32_t g_esp = g_esp;`, a local initialised
+ * from itself, and call_guest pushed its arguments through that (GCC made it 0: a write to 0xFFFFFFFC, issue #7).
+ * This file names the globals in full; the bare names are not macros here */
+#undef eax
+#undef ecx
+#undef edx
+#undef esp
+#undef ebx
+#undef esi
+#undef edi
 
 #include "trainer.h"
 
@@ -162,7 +173,8 @@ static uint32_t call_guest(uint32_t fn, int n, const uint32_t *args)
         return 0;
     }
     /* every register as the hooked function left it: its caller may read eax */
-    uint32_t esp = g_esp, ebx = g_ebx, esi = g_esi, edi = g_edi, ecx = g_ecx, edx = g_edx, eax = g_eax;
+    uint32_t s_esp = g_esp, s_ebx = g_ebx, s_esi = g_esi, s_edi = g_edi, s_ecx = g_ecx, s_edx = g_edx,
+             s_eax = g_eax;
     for (int i = n; i-- > 0;) {
         g_esp -= 4;
         MEM32(g_esp) = args[i];
@@ -171,7 +183,7 @@ static uint32_t call_guest(uint32_t fn, int n, const uint32_t *args)
     MEM32(g_esp) = 0;
     f();
     uint32_t r = g_eax;
-    g_esp = esp, g_ebx = ebx, g_esi = esi, g_edi = edi, g_ecx = ecx, g_edx = edx, g_eax = eax;
+    g_esp = s_esp, g_ebx = s_ebx, g_esi = s_esi, g_edi = s_edi, g_ecx = s_ecx, g_edx = s_edx, g_eax = s_eax;
     return r;
 }
 
@@ -198,6 +210,10 @@ static void god_mode(void)
 /* hle_debug.c's clock tick wrapper, after each tick; t0 is the clock's time before it */
 void hppoa_TrainerAfterTick(uint32_t clk, uint32_t t0)
 {
+#ifdef HPPOA_NO_TRAINER
+    (void)clk, (void)t0;
+    return;  /* no trainer: a release, or built without HPPOA_TRAINER */
+#endif
     if (clk != GAME_CLOCK) return;
     HppoaTrainer *t = &g_hppoa_trainer;
     float speed = t->speed;
@@ -217,24 +233,29 @@ void hppoa_TrainerAfterTick(uint32_t clk, uint32_t t0)
 }
 
 /* the native DebugMenu (FSCommand:DebugMenu): the retail body answers "false"; with the trainer's switch on the
- * answer is "true", as a development build's */
+ * answer is "true", as a development build's. A release build is the retail body only */
 extern void sub_00020310_gen(void);
 void sub_00020310(void)
 {
     sub_00020310_gen();
+#ifndef HPPOA_NO_TRAINER
     if (g_hppoa_trainer.debug_menu) {
         uint32_t args[2] = {STR_DEBUGMENU, STR_TRUE};
         call_guest(MEM32(APT_SETVAR), 2, args);
         fprintf(stderr, "[TRAINER] DebugMenu answered \"true\"\n");
     }
+#endif
 }
 
 /* the front end's pad poll (Apt key events from the controllers): the trainer's "open the debug menu" presses the
- * debug key, down this frame and up the next */
+ * debug key, down this frame and up the next. A release build is the game's poll only */
 extern void sub_001ABDD0_gen(void);
 void sub_001ABDD0(void)
 {
     sub_001ABDD0_gen();
+#ifdef HPPOA_NO_TRAINER
+    return;
+#endif
     HppoaTrainer *t = &g_hppoa_trainer;
     static int up_next;
     if (up_next) {
@@ -265,39 +286,16 @@ void sub_001ABDD0(void)
 int hppoa_TurnResponse(void);  /* app.cpp: the setting, 100 to 300 */
 int hppoa_InstantStep(void);   /* app.cpp: the first step from standing without the game's wait */
 int hppoa_TurnFullSpeed(void); /* app.cpp: running keeps its speed through turns */
+#include "hppoa_turn_tunes.h"
 
 /* Full speed while turning (F10 Enhancements, turn_full_speed; the Xbox slows). Each frame running loses speed in
  * proportion to how far Harry leans into a turn (sub_000CB2xx: step x TurnSpeedDragMult x |lean at +0x1474|), so a
  * circle run with the stick slows him the whole way round. On: TurnSpeedDragMult 0, the run's own speed throughout */
-#define TURN_SPEED_DRAG 0x36AEFCu  /* TurnSpeedDragMult, 0.2 as the game */
-
-/* Instant first step (F10 Enhancements, instant_step; the Xbox has the wait too). From standing, a push of the stick
- * waits before Harry goes: a shuffle phase (ShuffleTime, 100 ms) and, for a direction well away from his facing, a
- * pause before the turn on the spot (JumpTurnPivotDelayTime, 180 ms), the turn itself at 600 degrees a second and
- * the push off after it. On: no waits, the turn three times as quick, the push off twice as strong. Off: the game's */
-static const struct { uint32_t va; float on, off; int is_uint; } kStepVars[] = {
-    {0x36AD10u, 0.0f, 180.0f, 1},                   /* JumpTurnPivotDelayTime, ms */
-    {0x36A930u, 0.0f, 100.0f, 1},                   /* ShuffleTime, ms */
-    {0x36AD2Cu, 1800.0f * 1.7453292457503267e-05f, 600.0f * 1.7453292457503267e-05f, 0},  /* JumpTurnStandPivotSpeed */
-    {0x36A944u, 1800.0f * 1.7453292457503267e-05f, 600.0f * 1.7453292457503267e-05f, 0},  /* JumpTurnRunPivotSpeed */
-    {0x36AE48u, 2025.0f * 1.7453292457503267e-05f, 675.0f * 1.7453292457503267e-05f, 0},  /* JumpTurnRunQTurnPivotSpeed */
-    {0x36AC50u, 10.0f, 5.0f, 0},                    /* JumpTurnPushOffAccel */
-    {0x36AC7Cu, 4.5f, 2.25f, 0},                    /* JumpTurnRunQTurnPushOffAccel */
-    {0x36AA90u, 2.0f, 1.0f, 0},                     /* JumpTurnRunQTurnShortPushOffAccel */
-};
-
-static const struct { uint32_t va; float deg; } kTurnSpeeds[] = {
-    {0x36AB10u, 350.0f},  /* RunTurnSpeed */
-    {0x36AE34u, 360.0f},  /* WalkTurnSpeed */
-    {0x36AA7Cu, 90.0f},   /* SneakTurnSpeed */
-    {0x36AEC4u, 90.0f},   /* ShuffleTurnSpeed */
-    {0x36AE9Cu, 360.0f},  /* StandPivotSpeed */
-    {0x36AD64u, 360.0f},  /* SneakPivotSpeed */
-    {0x36A964u, 1080.0f}, /* WalkPivotSpeed */
-    {0x36AC20u, 2160.0f}, /* RunPivotSpeed */
-    {0x36AC8Cu, 90.0f},   /* ShufflePivotSpeed */
-};
-#define TURN_MOD_ACTIVE 0x36AA10u  /* TurnSpeedModActive, radians (80 degrees) */
+/* (TurnSpeedDragMult, 0x36AEFC.) Instant first step (instant_step; the Xbox has the wait too). From standing, a
+ * push of the stick waits before Harry goes: a shuffle phase (ShuffleTime, 100 ms) and, for a direction well away
+ * from his facing, a pause before the turn on the spot (JumpTurnPivotDelayTime, 180 ms), the turn itself at 600
+ * degrees a second and the push off after it. Every one of these, and the turn speeds, is a row of
+ * hppoa_turn_tunes.h: Responsive movement writes its tuned column */
 static const float kDegPerMs = 1.7453292457503267e-05f;  /* the speeds' stored unit: radians a millisecond */
 static const float kDeg = 0.01745329238474369f;
 
@@ -338,46 +336,98 @@ static void move_trace(uint32_t chr)
     if (now - t0 > 1500) g_move_active = 0;
 }
 
+/* Carrying (issue #6, 2026-11-15: on the train after the dementor, Ron carrying Harry spun about on every turn with
+ * Responsive movement: the doubled turn speeds and the narrower easing zone). The game's own test, as it applies
+ * CarryPlayerSpeedMultiplier (sub_000CA9D0): sub_000B24D0 (thiscall character: something carried, its handle at
+ * +0x14CC) with the carry mode at +0xFD8 3 or 4. While it holds, turning goes back to the console's (100 %); the
+ * instant first step and full speed through turns stay as set */
+extern void sub_000B24D0(void);
+static int player_carrying(uint32_t chr)
+{
+    if (!chr || !hppoa_GuestOk(chr + 0xFD8, 4) || !hppoa_GuestOk(chr + 0x14CC, 4) || !hppoa_GuestOk(chr + 0x28, 4))
+        return 0;
+    const uint32_t mode = MEM32(chr + 0xFD8);
+    if (mode != 3 && mode != 4) return 0;
+    const uint32_t eax0 = g_eax, ebx0 = g_ebx, ecx0 = g_ecx, edx0 = g_edx, esi0 = g_esi, edi0 = g_edi, esp0 = g_esp;
+    g_esp -= 4;
+    MEM32(g_esp) = 0;  /* return address, unused */
+    g_ecx = chr;
+    sub_000B24D0();
+    const int carrying = (g_eax & 0xFF) != 0;
+    g_eax = eax0, g_ebx = ebx0, g_ecx = ecx0, g_edx = edx0, g_esi = esi0, g_edi = edi0, g_esp = esp0;
+    return carrying;
+}
+
+/* Turning and the first step: every value in hppoa_turn_tunes.h written as % of the game's: Responsive movement's
+ * (the table's tuned column, tuned in the game 2026-11-15) or, with it off, all 100 (the console's). While carrying
+ * all are 100 (issue #6). Written when the choice or carrying changes. Returns the easing zone (radians) for the
+ * player's motion controller */
+enum { kTurnResponsive, kTurnGame };
+static float turn_apply(int carrying, int source)
+{
+    static const struct { uint32_t va; float game; int kind; int resp; } kTunes[] = {
+#define HPPOA_TUNE_ROW(f, label, va, game, kind, resp) {va, game, kind, resp},
+        HPPOA_TURN_TUNES(HPPOA_TUNE_ROW)
+#undef HPPOA_TUNE_ROW
+    };
+    enum { kN = sizeof kTunes / sizeof kTunes[0] };
+    static int last[kN], have;
+    static float zone = 80.0f * 0.01745329238474369f;
+    static ULONGLONG logged_at;
+    int pct[kN], same = have;
+    for (int i = 0; i < kN; i++) {
+        pct[i] = carrying || source != kTurnResponsive ? 100 : kTunes[i].resp;
+        same &= pct[i] == last[i];
+    }
+    if (same) return zone;
+    for (int i = 0; i < kN; i++) {
+        const float v = kTunes[i].game * (float)pct[i] / 100.0f;
+        switch (kTunes[i].kind) {
+        case 0: MEMF(kTunes[i].va) = v * kDegPerMs; break;
+        case 1: MEM32(kTunes[i].va) = (uint32_t)(v + 0.5f); break;
+        case 3: MEMF(kTunes[i].va) = zone = v * kDeg; break;
+        default: MEMF(kTunes[i].va) = v; break;
+        }
+        last[i] = pct[i];
+    }
+    have = 1;
+    const ULONGLONG now = GetTickCount64();
+    if (now - logged_at > 1000) {  /* not every frame of a slider's drag */
+        logged_at = now;
+        static const char *const kNames[] = {"Responsive movement", "as the game"};
+        char line[512];
+        int k = snprintf(line, sizeof line, "[TURN] %s%s:", kNames[source], carrying ? " (carrying: all as the game)" : "");
+        for (int i = 0; i < kN && k < (int)sizeof line - 16; i++) k += snprintf(line + k, sizeof line - k, " %d", pct[i]);
+        fprintf(stderr, "%s %%\n", line);
+    }
+    return zone;
+}
+
+static int g_carrying;  /* the player is carrying (player_carrying, this frame): every enhancement as the game */
+
 void hppoa_TurningTick(void)
 {
-    static int applied = 100;
     static uint32_t applied_ctl;
-    int pct = hppoa_TurnResponse();
-    if (pct < 100) pct = 100;
-    if (pct > 300) pct = 300;
-    float f = (float)pct / 100.0f, zone = 80.0f * kDeg / f;
-    if (pct != applied) {
-        for (size_t i = 0; i < sizeof kTurnSpeeds / sizeof kTurnSpeeds[0]; i++)
-            MEMF(kTurnSpeeds[i].va) = kTurnSpeeds[i].deg * kDegPerMs * f;
-        MEMF(TURN_MOD_ACTIVE) = zone;
-        fprintf(stderr, "[TURN] turning response %d %%: run turn %.0f deg/s, easing inside %.0f degrees\n", pct,
-                350.0f * f, 80.0f / f);
-        applied = pct;
-        applied_ctl = 0;
-    }
-    static int drag_applied = -1;
-    int full = hppoa_TurnFullSpeed() ? 1 : 0;
-    if (full != drag_applied) {
-        MEMF(TURN_SPEED_DRAG) = full ? 0.0f : 0.2f;
-        fprintf(stderr, "[TURN] running through turns: %s\n", full ? "at full speed" : "slowed as the game");
-        drag_applied = full;
-    }
-    static int step_applied = -1;
-    int step = hppoa_InstantStep() ? 1 : 0;
-    if (step != step_applied) {
-        for (size_t i = 0; i < sizeof kStepVars / sizeof kStepVars[0]; i++) {
-            float v = step ? kStepVars[i].on : kStepVars[i].off;
-            if (kStepVars[i].is_uint) MEM32(kStepVars[i].va) = (uint32_t)v;
-            else MEMF(kStepVars[i].va) = v;
+    {
+        static int was_carrying = -1;
+        const uint32_t pl = hppoa_TrainerPlayer();
+        const int carrying = player_carrying(pl);
+        if (carrying != was_carrying) {
+            if (was_carrying >= 0 || carrying)
+                fprintf(stderr, "[CARRY] %s (carry mode %u)\n", carrying ? "carrying: movement as the game" : "carry over",
+                        pl && hppoa_GuestOk(pl + 0xFD8, 4) ? MEM32(pl + 0xFD8) : 0);
+            was_carrying = carrying;
         }
-        fprintf(stderr, "[TURN] first step from standing: %s\n", step ? "at once (no shuffle or pivot wait)" : "as the game");
-        step_applied = step;
+        g_carrying = carrying;
     }
+    const int responsive = hppoa_TurnResponse() > 100 || hppoa_InstantStep() || hppoa_TurnFullSpeed();
+    const float zone = turn_apply(g_carrying, responsive ? kTurnResponsive : kTurnGame);
     /* the player's motion controller keeps its own copy of the zone */
+    static float ctl_zone;
     uint32_t chr = hppoa_TrainerPlayer();
     uint32_t ctl = chr && hppoa_GuestOk(chr + 0xD60, 4) ? MEM32(chr + 0xD60) : 0;
-    if (ctl && ctl != applied_ctl && hppoa_GuestOk(ctl + 0x78, 4)) {
-        MEMF(ctl + 0x78) = zone;
+    if (ctl && (ctl != applied_ctl || zone != ctl_zone) && hppoa_GuestOk(ctl + 0x78, 4)) {
+        MEMF(ctl + 0x78) = ctl_zone = zone;
         applied_ctl = ctl;
     }
     move_trace(chr);
@@ -407,7 +457,7 @@ void sub_002135F0(void)
                     e && hppoa_GuestOk(e, 4) ? (int)MEM32(e) : -1,
                     sqrtf((float)g_stick_scaled[0] * g_stick_scaled[0] + (float)g_stick_scaled[1] * g_stick_scaled[1]) / 32767.0f);
     }
-    if (!e || !hppoa_InstantStep() || !hppoa_GuestOk(e, 4)) return;
+    if (!e || g_carrying || !hppoa_InstantStep() || !hppoa_GuestOk(e, 4)) return;
     uint32_t chr = hppoa_TrainerPlayer();
     if (!chr || tab != chr + 0x1090) return;
     /* only while the game's value climbs as it does from standing (about 1.65 a second): what Harry does when the

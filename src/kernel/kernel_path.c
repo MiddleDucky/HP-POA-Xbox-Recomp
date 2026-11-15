@@ -183,7 +183,7 @@ const wchar_t *xbox_LastHostPath(void)
 
 static WCHAR s_game_dir[MAX_PATH];
 static WCHAR s_save_dir[MAX_PATH];
-static WCHAR s_user_dir[MAX_PATH];  /* <exe dir>\\saves: E:\\UDATA and E:\\TDATA */
+static WCHAR s_user_dir[MAX_PATH];  /* <working dir>\\saves: E:\\UDATA and E:\\TDATA */
 static BOOL  s_initialized = FALSE;
 
 /*
@@ -352,12 +352,16 @@ void xbox_path_init(const char* game_dir, const char* save_dir)
         WCHAR image[MAX_PATH];
         WCHAR dir[MAX_PATH];
         SHCreateDirectoryExW(NULL, s_save_dir, NULL);
-        /* the saves folder beside the executable, with E:'s UDATA and TDATA */
+        /* the saves folder in the working folder, with E:'s UDATA and TDATA: the run directory, as on POSIX below.
+         * It was beside the executable; a launcher starts the game in its own folder, which is where saves\ was,
+         * so a port can keep its exe in a subfolder (bin\) and its saves where they were (from the HP:PS port; the
+         * PoA v0.2.0 build put them in bin\saves\, away from a v0.1.0 folder's, 2026-11-15) */
         {
-            WCHAR *slash;
-            GetModuleFileNameW(NULL, s_user_dir, MAX_PATH);
-            slash = wcsrchr(s_user_dir, L'\\');
-            if (slash) *slash = L'\0';
+            if (!GetCurrentDirectoryW(MAX_PATH, s_user_dir)) s_user_dir[0] = L'\0';
+            {
+                size_t ul = wcslen(s_user_dir);
+                if (ul > 0 && s_user_dir[ul - 1] == L'\\') s_user_dir[ul - 1] = L'\0';
+            }
             wcscat_s(s_user_dir, MAX_PATH, L"\\saves");
             swprintf_s(dir, MAX_PATH, L"%s\\UDATA", s_user_dir);
             SHCreateDirectoryExW(NULL, dir, NULL);

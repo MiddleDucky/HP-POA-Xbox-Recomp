@@ -286,7 +286,7 @@ Launch g_launch;
 
 const char* const kManaged[] = {"startchapter", "startroom", "startdebugpoint", "nomovie", "nomusic", "nosound"};
 
-std::filesystem::path CfgPath() { return ExeDir() / "game" / "runtime.cfg"; }
+std::filesystem::path CfgPath() { return std::filesystem::current_path() / "game" / "runtime.cfg"; }
 
 std::string Lower(std::string s) {
     for (char& c : s) c = char(std::tolower((unsigned char)c));
@@ -299,7 +299,7 @@ void LoadLaunch() {
     l.loaded = true;
     std::error_code ec;
     std::set<std::string> chapters;
-    for (auto& e : std::filesystem::directory_iterator(ExeDir() / "game" / "data" / "packages" / "plfs", ec)) {
+    for (auto& e : std::filesystem::directory_iterator(std::filesystem::current_path() / "game" / "data" / "packages" / "plfs", ec)) {
         std::string n = Lower(e.path().filename().string());
         if (n.size() < 5 || n.substr(n.size() - 4) != ".pkg") continue;
         n.resize(n.size() - 4);
@@ -702,9 +702,16 @@ void DrawLaunch() {
 
 }  // namespace
 
+#ifdef HPPOA_NO_TRAINER
+// a build without the trainer (a release, or HPPOA_TRAINER off) has none: nothing opens the window, so none of its switches can be turned on
+bool TrainerOpen() { return false; }
+
+void ToggleTrainer() {}
+#else
 bool TrainerOpen() { return g_trainer; }
 
 void ToggleTrainer() { g_trainer = !g_trainer; }
+#endif
 
 void DrawTrainer() {
     ImGuiIO& io = ImGui::GetIO();

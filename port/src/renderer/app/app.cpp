@@ -29,7 +29,7 @@ namespace app {
 
 namespace {
 
-enum class Kind { U32, Bool, Display, Aspect, Key, Pad, ColorBlind, Fps };
+enum class Kind { U32, Bool, Display, Aspect, Key, Pad, ColorBlind, Fps, Language };
 
 struct Entry {
     const char* key;  // in hppoa.toml
@@ -88,6 +88,9 @@ const Entry kEntries[] = {
      "60, or 30 (the game's own); the game clock follows real time at either"},
     {"speakers", "RECOMP_SPEAKERS", Kind::U32, FIELD(speakers), 2, 6,
      "2 stereo, 6 5.1 surround (the console's speaker mix, each channel to its own speaker); takes a restart"},
+    {"language", "RECOMP_LANGUAGE", Kind::Language, FIELD(language), 0, 0,
+     "the language the game starts in, the console's: 'english', 'french', 'german', 'spanish' or 'italian' (the PAL "
+     "disc has them all; NTSC-US is English only); takes a restart"},
     {"button_prompts", nullptr, Kind::U32, FIELD(button_prompts), 0, 2,
      "the buttons named in the game's text: 0 automatic (the device played with last), 1 controller, 2 keyboard and mouse (the key bindings' names); read at start"},
     {"tutorials_once", nullptr, Kind::Bool, FIELD(tutorials_once), 0, 0,
@@ -100,6 +103,8 @@ const Entry kEntries[] = {
      "how quickly the player turns to the stick, % of the game's: 100 as the console, 200 twice as quick"},
     {"hide_save_icon", nullptr, Kind::Bool, FIELD(hide_save_icon), 0, 0,
      "the turning compass the game shows in the top left corner while it saves or loads is not drawn"},
+    {"skip_intro", "RECOMP_SKIP_INTRO", Kind::Bool, FIELD(skip_intro), 0, 0,
+     "the EA and Warner Bros. logo movies at start skipped; false: played, as the console does"},
     {"cutscene_bars_hidden", "RECOMP_CUTSCENE_BARS_HIDDEN", Kind::Bool, FIELD(cutscene_bars_hidden), 0, 0,
      "16:9: cutscenes fill the screen, the black bars at the top and bottom left out; false: the bars as the game"},
     {"smooth_textures", "RECOMP_SMOOTH_TEXTURES", Kind::Bool, FIELD(smooth_textures), 0, 0,
@@ -111,6 +116,8 @@ const Entry kEntries[] = {
     {"colorblind_strength", nullptr, Kind::U32, FIELD(colorblind_strength), 0, 100, "0 to 100 %"},
     {"keyboard_mouse", nullptr, Kind::Bool, FIELD(kbm), 0, 0,
      "keyboard and mouse play as controller 1, alongside a pad (key names below; Mouse1-5 the mouse buttons)"},
+    {"kbm_arrows_menu", nullptr, Kind::Bool, FIELD(kbm_arrows_menu), 0, 0,
+     "in the menus (pause, inventory, front end) the camera keys also move as the D-pad; false: camera only"},
     {"mouse_sensitivity", nullptr, Kind::U32, FIELD(mouse_sensitivity), 1, 100, "1 to 100, the camera's speed with the mouse"},
     {"mouse_invert_y", nullptr, Kind::Bool, FIELD(mouse_invert_y), 0, 0, nullptr},
     {"deadzone_left", nullptr, Kind::U32, FIELD(deadzone_left), 0, 50,
@@ -168,6 +175,9 @@ const Entry kEntries[] = {
 constexpr const char* kDisplayNames[] = {"windowed", "borderless", "fullscreen"};
 constexpr const char* kAspectNames[] = {"4:3", "16:9", "stretch"};
 constexpr const char* kColorBlindNames[] = {"off", "protanopia", "deuteranopia", "tritanopia"};
+// the console languages the PAL disc has (its languageSet adds Dutch and Swedish, which no console setting names)
+constexpr const char* kLanguageNames[] = {"english", "french", "german", "spanish", "italian"};
+constexpr uint32_t kLanguages = 5;
 
 uint32_t& U(Settings& s, const Entry& e) { return *reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(&s) + e.off); }
 bool& B(Settings& s, const Entry& e) { return *reinterpret_cast<bool*>(reinterpret_cast<char*>(&s) + e.off); }
@@ -204,6 +214,11 @@ bool Parse(Settings& s, const Entry& e, std::string v) {
                 if (!_stricmp(v.c_str(), kAspectNames[i])) return U(s, e) = i, true;
             }
             return false;
+        case Kind::Language:
+            for (uint32_t i = 0; i < kLanguages; i++) {
+                if (!_stricmp(v.c_str(), kLanguageNames[i])) return U(s, e) = i, true;
+            }
+            return false;
         case Kind::Fps:
             if (!_stricmp(v.c_str(), "unlocked")) return U(s, e) = kFpsUnlocked, true;
             if (v == "0" || v == "30") return U(s, e) = uint32_t(std::atoi(v.c_str())), true;
@@ -235,6 +250,7 @@ std::string Format(Settings& s, const Entry& e) {
         case Kind::Display: return std::string("'") + kDisplayNames[std::min(U(s, e), 2u)] + "'";
         case Kind::Aspect: return std::string("'") + kAspectNames[std::min(U(s, e), 2u)] + "'";
         case Kind::Fps: return U(s, e) == kFpsUnlocked ? "'unlocked'" : std::to_string(U(s, e));
+        case Kind::Language: return std::string("'") + kLanguageNames[std::min(U(s, e), kLanguages - 1)] + "'";
         case Kind::ColorBlind: return std::string("'") + kColorBlindNames[std::min(U(s, e), 3u)] + "'";
         case Kind::Pad: return std::string("'") + kPadInputNames[std::min(U(s, e), kPadInputs - 1)] + "'";
         case Kind::Key: return std::string("'") + KeyName(U(s, e)) + "'";
@@ -338,6 +354,9 @@ void Init(State& st) {
     // stereo beds to the front and back pairs, as on a console (APU voice table, 2026-11-02); hle_dsound.c mixes
     // them to the six outputs
     _putenv_s("RECOMP_SPEAKERS", st.cur.speakers == 6 ? "6" : "2");
+    // the kernel answers the title's language query (XC_LANGUAGE) from this; read once, as the title starts. The PAL
+    // disc's default language follows it (defaultLanguage in its script)
+    _putenv_s("RECOMP_LANGUAGE", kLanguageNames[std::min(st.cur.language, kLanguages - 1)]);
     if (!had) WriteFile(st.file);
     std::error_code ec;
     st.stamp = std::filesystem::last_write_time(FilePath(), ec);
@@ -498,6 +517,7 @@ extern "C" int hppoa_TutorialsOnce(void) { return app::Get().tutorials_once; }
 extern "C" int hppoa_QuietTurnIn(void) { return app::Get().quiet_turn_in; }
 extern "C" int hppoa_HideSaveIcon(void) { return app::Get().hide_save_icon; }
 extern "C" int hppoa_CutsceneBarsHidden(void) { return app::Get().cutscene_bars_hidden; }
+extern "C" int hppoa_SkipIntro(void) { return app::Get().skip_intro; }  // hle_video.c, the script's PlayMovie
 extern "C" int hppoa_TurnResponse(void) { return int(app::Get().turn_response); }
 // L3 + R3 always opens the panel (2026-11-10: no longer an option)
 extern "C" int hppoa_PadMenuCombo(void) { return 1; }

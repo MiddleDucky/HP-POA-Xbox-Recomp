@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <mutex>
 
+
 namespace app {
 
 enum class DisplayMode : uint32_t { Windowed, Borderless, Fullscreen };  // as xboxrecomp's XBOX_DISPLAY_*
@@ -51,6 +52,7 @@ struct Settings {
     bool instant_step = true;          // the first step from standing without the game's wait (hle_trainer.c)
     uint32_t turn_response = 200;      // % of the game's turn speeds, 100 as the console (hle_trainer.c)
     bool hide_save_icon = true;  // the compass shown top left while saving or loading left out (d3d12.cpp)
+    bool skip_intro = false;           // the EA and Warner Bros. logo movies at start not played (hle_video.c)
     bool cutscene_bars_hidden = false; // 16:9 cutscenes without their letterbox bars (hle_widescreen.c, d3d12.cpp)
     bool smooth_textures = true;       // stretched textures (skies, landscapes) filtered bicubic (d3d12.cpp, kTexSmooth)
     bool quiet_turn_in = false;        // the trio's / Neville's "time to turn in" lines left out (hle_debug.c)
@@ -85,7 +87,10 @@ struct Settings {
     uint32_t colorblind = 0;           // ColorBlind: correction filter over the finished frame
     uint32_t colorblind_strength = 100;  // 0 to 100 %
     uint32_t speakers = 2;             // xboxrecomp: 2 stereo, 6 5.1 surround (hle_dsound.c, at start)
+    uint32_t language = 0;             // the console's language, which the title starts in: 0 English, 1 French,
+                                       // 2 German, 3 Spanish, 4 Italian (RECOMP_LANGUAGE to the kernel, at start)
     bool kbm = true;                   // keyboard and mouse drive pad 1 alongside a controller
+    bool kbm_arrows_menu = true;       // in the menus the camera keys (arrows) are the D-pad too (input.cpp)
     uint32_t mouse_sensitivity = 50;   // 1 to 100
     bool mouse_invert_y = false;
     uint32_t deadzone_left = 10, deadzone_right = 10;          // % of full tilt read as centred

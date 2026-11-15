@@ -596,6 +596,10 @@ void NoteDevice(bool kbm) {
 // hle_input.c: the left stick of the last read came from the movement keys (exact: no range compensation)
 extern "C" int app_KbmStick(void) { return app::g_kbm_stick.load(); }
 
+extern "C" int hppoa_InGame(void);     // hle_quit.c: the game itself on screen, not its menus
+extern "C" int hppoa_Paused(void);     // hle_quit.c: the pause menu (or a menu opened from it) is up
+extern "C" int hppoa_Inventory(void);  // hle_quit.c: the inventory is up
+
 // hle_input.c: a pad read for the game, after the PC's controller filled it in
 extern "C" void app_InputPad(int port, XBOX_GAMEPAD* g) {
     const app::Settings& s = app::Get();
@@ -627,8 +631,17 @@ extern "C" void app_InputPad(int port, XBOX_GAMEPAD* g) {
         }
         float rx, ry;
         app::MouseStick(s, &rx, &ry);
-        rx += float(app::Held(s.keys[23])) - float(app::Held(s.keys[22]));
-        ry += float(app::Held(s.keys[20])) - float(app::Held(s.keys[21]));
+        // xboxrecomp (hppoa): in the menus (pause, inventory, front end) the camera keys (camera up, down, left,
+        // right: 20 to 23, the arrows by default) are the D-pad's (8 to 11) as well, which the menus move by; the
+        // camera does nothing there (by request, 2026-11-15: the arrows did not move the pause menu)
+        const bool menus = s.kbm_arrows_menu && (!hppoa_InGame() || hppoa_Paused() || hppoa_Inventory());
+        if (menus)
+            for (uint32_t k = 0; k < 4; k++)
+                if (app::Held(s.keys[20 + k])) out[8 + k] = 255, kbm_used = true;
+        if (!menus) {
+            rx += float(app::Held(s.keys[23])) - float(app::Held(s.keys[22]));
+            ry += float(app::Held(s.keys[20])) - float(app::Held(s.keys[21]));
+        }
         kbm_used |= std::fabs(rx) > 0.2f || std::fabs(ry) > 0.2f;
         if (rx || ry) {
             float m = std::sqrt(rx * rx + ry * ry);

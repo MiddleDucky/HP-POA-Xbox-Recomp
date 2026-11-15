@@ -11,6 +11,7 @@
 #include <d3d11.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cfloat>
 #include <cstdint>
 #include <cstdio>
@@ -26,6 +27,7 @@
 #include <backends/imgui_impl_win32.h>
 
 #include "gamefiles.h"
+#include "xiso.h"
 #include "font/title_font.inc"  // Magic School One (FontMesa), the title's font
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
@@ -50,9 +52,72 @@ struct Settings {
     bool vibration = true, invert_x = false, invert_y = false;
     bool controller = true;  // the in-game F10 option of the same name
     int speakers = 0;        // speakers: 0 stereo (2), 1 5.1 surround (6), as F10 > Audio > Speakers
+    int language = 0;        // language: the console's, which the game starts in (kLanguageKeys; PAL's disc has them all)
+    int opt[64] = {};        // the rest of F10's settings, by kOpts (each its own toml key)
 };
 
+// xboxrecomp: the rest of the game's settings (F10's, renderer/app/app.cpp's keys and defaults), so this page has them
+// all (2026-11-14): each a toml key with its control. kHeader: a heading over the next ones; kCheckNot: a checkbox that
+// is on when the key is false; kSpeakers: Stereo / 5.1, the key 2 or 6; kResponsive: Responsive movement, one box for
+// turn_response (200 / 100), instant_step and turn_full_speed, as F10 and PC Settings have it
+enum OptType { kHeader, kCheck, kCheckNot, kSlider, kChoice, kSpeakers, kResponsive };
+struct Opt {
+    const char* tab;
+    const char* key;  // null for a heading
+    const char* label;
+    OptType type;
+    int def, lo, hi;
+    const char* fmt;               // a slider's
+    const char* const* names;      // a choice's
+    const char* note;              // under it, greyed
+};
+const char* const kPromptNames[] = {"Follow the last input", "Controller buttons", "Keyboard keys"};
+const Opt kOpts[] = {
+    {"Game", nullptr, "Enhancements", kHeader, 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Game", "tutorials_once", "Show each tutorial once", kCheck, 1, 0, 0, nullptr, nullptr, nullptr},
+    {"Game", "quiet_turn_in", "Leave out \"time to turn in\" and \"we need to go\" lines", kCheck, 0, 0, 0, nullptr,
+     nullptr, nullptr},
+    // one box (by request, 2026-11-15: the turn speed slider and the two boxes beside it were Responsive movement's
+    // insides); its values are the game's hppoa_turn_tunes.h
+    {"Game", "turn_response", "Responsive movement", kResponsive, 1, 0, 0, nullptr, nullptr,
+     "Quicker turning and the first step at once. Off: as the console."},
+    {"Game", "smooth_textures", "Smooth stretched textures", kCheck, 1, 0, 0, nullptr, nullptr, nullptr},
+    {"Game", "cutscene_bars_hidden", "Cutscenes without black bars (16:9)", kCheck, 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Game", "hide_save_icon", "Hide the saving / loading compass", kCheck, 1, 0, 0, nullptr, nullptr, nullptr},
+    {"Game", "skip_intro", "Skip the EA and Warner Bros. logos", kCheck, 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Display", "fps_counter", "FPS counter", kCheck, 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Graphics", "render_percent", "Render scale %", kSlider, 100, 25, 200, "%d %%", nullptr,
+     "Render scale and its limit apply with Internal resolution set to follow the window."},
+    {"Graphics", "render_max_height", "Max render height", kSlider, 1080, 0, 4320, "%d lines", nullptr, nullptr},
+    {"Graphics", "brightness", "Brightness", kSlider, 50, 0, 100, "%d", nullptr, nullptr},
+    {"Graphics", "contrast", "Contrast", kSlider, 50, 0, 100, "%d", nullptr, nullptr},
+    {"Graphics", "async_shaders", "Build shaders in the background", kCheck, 1, 0, 0, nullptr, nullptr,
+     "A draw whose shader is still building is left out for a moment instead of waited for."},
+    {"Post-processing", "game_bloom", "Bloom %", kSlider, 100, 0, 200, "%d %%", nullptr, "100 as the game, 0 off."},
+    {"Post-processing", "sharpen", "Sharpening", kSlider, 0, 0, 100, "%d", nullptr, nullptr},
+    {"Post-processing", "saturation", "Saturation", kSlider, 100, 0, 200, "%d %%", nullptr, nullptr},
+    {"Post-processing", "vibrance", "Vibrance", kSlider, 0, 0, 100, "%d", nullptr, nullptr},
+    {"Post-processing", "warmth", "Warmth", kSlider, 50, 0, 100, "%d", nullptr, "50 as the game, lower cooler, higher warmer."},
+    {"Post-processing", "vignette", "Vignette", kSlider, 0, 0, 100, "%d", nullptr, nullptr},
+    {"Post-processing", "grain", "Film grain", kSlider, 0, 0, 100, "%d", nullptr, nullptr},
+    {"Post-processing", "fov", "Field of view %", kSlider, 100, 80, 130, "%d %%", nullptr, "100 as the game."},
+    {"Controls", "button_prompts", "Button prompts", kChoice, 0, 0, 2, nullptr, kPromptNames, nullptr},
+    {"Controls", "mouse_invert_y", "Invert mouse Y", kCheck, 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Controls", nullptr, "Controller", kHeader, 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Controls", "deadzone_left", "Left stick deadzone %", kSlider, 10, 0, 50, "%d", nullptr, nullptr},
+    {"Controls", "sensitivity_left", "Left stick sensitivity %", kSlider, 100, 25, 200, "%d", nullptr, nullptr},
+    {"Controls", "deadzone_right", "Right stick deadzone %", kSlider, 10, 0, 50, "%d", nullptr, nullptr},
+    {"Controls", "sensitivity_right", "Right stick sensitivity %", kSlider, 100, 25, 200, "%d", nullptr, nullptr},
+    {"Controls", "vibration_strength", "Vibration strength %", kSlider, 100, 0, 100, "%d", nullptr, nullptr},
+};
+constexpr int kOptCount = int(sizeof(kOpts) / sizeof(kOpts[0]));
+static_assert(kOptCount <= 64, "Settings::opt");
+
 const char* const kColorBlindKeys[] = {"off", "protanopia", "deuteranopia", "tritanopia"};
+// the console languages (app.cpp's language key): the PAL disc has each; NTSC-US is English only
+const char* const kLanguageKeys[] = {"english", "french", "german", "spanish", "italian"};
+const char* const kLanguageNames[] = {"English", "Fran\xC3\xA7" "ais", "Deutsch", "Espa\xC3\xB1ol", "Italiano"};
+constexpr int kLanguageCount = 5;
 const char* const kColorBlindNames[] = {"Off", "Protanopia (red-weak)", "Deuteranopia (green-weak)", "Tritanopia (blue-weak)"};
 
 const char* const kSpeakerNames[] = {"Stereo", "5.1 surround"};
@@ -69,6 +134,50 @@ std::wstring ExeDir() {
     DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);
     std::wstring p(buf, n);
     return p.substr(0, p.find_last_of(L"\\/") + 1);
+}
+
+// xboxrecomp (hppoa): bin\ beside this launcher, as the CoS and PS ports have it (v0.2.0): the game (hppoa.exe) and
+// everything it keeps for itself, hppoa.toml, shadercache\, logs\, tutorials_seen.txt and the file check's
+// game_check.txt. game\, saves\ and licenses\ stay up here with the launcher (the game's working folder). A folder
+// with hppoa.exe beside the launcher and no bin\hppoa.exe (a development build) keeps everything beside it
+bool BinLayout() {
+    static int bin = -1;
+    if (bin < 0) bin = GetFileAttributesW((ExeDir() + L"bin\\hppoa.exe").c_str()) != INVALID_FILE_ATTRIBUTES;
+    return bin != 0;
+}
+std::wstring BinDir() { return BinLayout() ? ExeDir() + L"bin\\" : ExeDir(); }
+
+// a folder from before bin\ (everything beside the launcher, v0.1.0): its settings, file check, tutorials seen and
+// shader cache moved in once, so an update keeps them and does not read the whole disc again; the old hppoa.exe goes.
+// Something already in bin\ is left as it is (from the HP:PS port's MoveIntoBin)
+void MoveIntoBin() {
+    if (!BinLayout()) return;
+    const std::wstring top = ExeDir(), bin = BinDir();
+    for (const wchar_t* name : {L"hppoa.toml", L"game_check.txt", L"debug.env", L"tutorials_seen.txt"}) {
+        const std::wstring from = top + name, to = bin + name;
+        if (GetFileAttributesW(from.c_str()) != INVALID_FILE_ATTRIBUTES &&
+            GetFileAttributesW(to.c_str()) == INVALID_FILE_ATTRIBUTES)
+            MoveFileW(from.c_str(), to.c_str());
+    }
+    DeleteFileW((top + L"hppoa.exe").c_str());  // the old game, now bin\hppoa.exe
+    // the release brings bin\shadercache\base_shaders.bin, so the old cache goes in entry by entry: what the player's PC
+    // prepared moves in, the release's base files win over the old ones, and the emptied old folder goes
+    const std::wstring old_cache = top + L"shadercache\\", new_cache = bin + L"shadercache\\";
+    CreateDirectoryW(new_cache.c_str(), nullptr);
+    WIN32_FIND_DATAW fd;
+    HANDLE f = FindFirstFileW((old_cache + L"*").c_str(), &fd);
+    if (f != INVALID_HANDLE_VALUE) {
+        do {
+            const std::wstring n = fd.cFileName;
+            if (n == L"." || n == L"..") continue;
+            const std::wstring from = old_cache + n, to = new_cache + n;
+            if (GetFileAttributesW(to.c_str()) == INVALID_FILE_ATTRIBUTES) MoveFileW(from.c_str(), to.c_str());
+            else if (n.rfind(L"base_", 0) == 0 && !(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+                DeleteFileW(from.c_str());  // the release's copy is newer
+        } while (FindNextFileW(f, &fd));
+        FindClose(f);
+        RemoveDirectoryW((top + L"shadercache").c_str());  // only once empty
+    }
 }
 
 std::string Narrow(const std::wstring& w) {
@@ -113,7 +222,7 @@ void SetValue(const std::string& key, const std::string& v) {
     g_lines.push_back(key + " = " + v);
 }
 
-std::string TomlPath() { return Narrow(ExeDir()) + "hppoa.toml"; }
+std::string TomlPath() { return Narrow(BinDir()) + "hppoa.toml"; }
 
 Settings Load() {
     Settings s;
@@ -145,10 +254,38 @@ Settings Load() {
     s.invert_x = Value("invert_camera_x") == "true";
     s.invert_y = Value("invert_camera_y") == "true";
     s.speakers = u(Value("speakers"), 2) == 6 ? 1 : 0;
+    {
+        std::string lang = Value("language");
+        for (int i = 0; i < kLanguageCount; i++)
+            if (lang == kLanguageKeys[i]) s.language = i;
+    }
+    for (int i = 0; i < kOptCount; i++) {
+        const Opt& o = kOpts[i];
+        if (!o.key) continue;
+        std::string v = Value(o.key);
+        if (o.type == kCheck || o.type == kCheckNot) s.opt[i] = v.empty() ? o.def : v == "true";
+        else if (o.type == kSpeakers) s.opt[i] = v == "6";
+        else if (o.type == kResponsive)  // on when any of its three is (an unset file: on, the game's default)
+            s.opt[i] = (v.empty() ? 200 : std::strtol(v.c_str(), nullptr, 10)) > 100 ||
+                       Value("instant_step") != "false" || Value("turn_full_speed") != "false";
+        else s.opt[i] = v.empty() ? o.def : std::clamp(int(std::strtol(v.c_str(), nullptr, 10)), o.lo, o.hi);
+    }
     return s;
 }
 
 void Save(const Settings& s) {
+    for (int i = 0; i < kOptCount; i++) {
+        const Opt& o = kOpts[i];
+        if (!o.key) continue;
+        if (o.type == kCheck || o.type == kCheckNot) SetValue(o.key, s.opt[i] ? "true" : "false");
+        else if (o.type == kSpeakers) SetValue(o.key, s.opt[i] ? "6" : "2");
+        else if (o.type == kResponsive) {
+            SetValue("turn_response", s.opt[i] ? "200" : "100");
+            SetValue("instant_step", s.opt[i] ? "true" : "false");
+            SetValue("turn_full_speed", s.opt[i] ? "true" : "false");
+        }
+        else SetValue(o.key, std::to_string(s.opt[i]));
+    }
     auto q = [](const char* v) { return std::string("'") + v + "'"; };
     SetValue("display_mode", q(kDisplayKeys[s.display]));
     SetValue("width", std::to_string(s.width));
@@ -171,6 +308,7 @@ void Save(const Settings& s) {
     SetValue("invert_camera_x", s.invert_x ? "true" : "false");
     SetValue("invert_camera_y", s.invert_y ? "true" : "false");
     SetValue("speakers", s.speakers ? "6" : "2");
+    SetValue("language", q(kLanguageKeys[std::clamp(s.language, 0, kLanguageCount - 1)]));
     std::ofstream f(TomlPath(), std::ios::trunc);
     for (const auto& l : g_lines) f << l << "\n";
 }
@@ -268,7 +406,7 @@ void FitSize(Settings& s) {
     s.height = m.front().second;
 }
 
-// hppoa.exe beside this one, with run_win.sh's environment
+// bin\hppoa.exe (or hppoa.exe beside this one: BinLayout), with run_win.sh's environment
 std::string FilesLogLine();
 
 bool StartGame() {
@@ -280,12 +418,20 @@ bool StartGame() {
     };
     for (auto [k, v] : kEnv)
         if (!GetEnvironmentVariableW(k, nullptr, 0)) SetEnvironmentVariableW(k, v);
-    std::wstring dir = ExeDir(), exe = dir + L"hppoa.exe";
+    std::wstring dir = ExeDir(), exe = BinDir() + L"hppoa.exe";
     std::wstring cmd = L"\"" + exe + L"\"";
-    // the game's console output (its [CRASH] reports among it) to hppoa_run.log beside it: a windowed launcher has no
-    // console to hand down
+    // the game's console output (its [CRASH] reports among it) to hppoa_run.log: a windowed launcher has no console to
+    // hand down. With bin\ in bin\logs\, the kernel's log beside it (XBOX_KERNEL_LOG), the name for F10's Debug tab
+    // (HPPOA_RUN_LOG); both relative to the game's working folder, this one
+    std::wstring run_log = L"hppoa_run.log";
+    if (BinLayout()) {
+        CreateDirectoryW((BinDir() + L"logs").c_str(), nullptr);
+        run_log = L"bin\\logs\\hppoa_run.log";
+        SetEnvironmentVariableW(L"XBOX_KERNEL_LOG", L"bin\\logs\\xbox_kernel.log");
+        SetEnvironmentVariableW(L"HPPOA_RUN_LOG", run_log.c_str());
+    }
     SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
-    HANDLE log = CreateFileW((dir + L"hppoa_run.log").c_str(), GENERIC_WRITE, FILE_SHARE_READ, &sa, CREATE_ALWAYS,
+    HANDLE log = CreateFileW((dir + run_log).c_str(), GENERIC_WRITE, FILE_SHARE_READ, &sa, CREATE_ALWAYS,
                              FILE_ATTRIBUTE_NORMAL, nullptr);
     STARTUPINFOW si{};
     si.cb = sizeof(si);
@@ -309,7 +455,7 @@ bool StartGame() {
 
 // ── Game files ──────────────────────────────────────────────────────────────────────────────────────────────────────
 // game\ checked against the disc's files (gamefiles.h). Every byte is read once, on a fresh start (no game_check.txt
-// made under this list), and again only from the page's Verify button; every other
+// made under this list) or after unpacking, and again only from the page's Verify and Repair buttons; every other
 // start looks at the sizes alone (a few ms) and never reads them all on its own. The full check's result, the damaged
 // files by name, is kept in game_check.txt beside the launcher and reported on later starts until a Verify clears it; a damaged or missing file is named on the page and in the run log (2026-10-29: a player's Burrow had no
 // music, and nothing said whether their files were whole; from the CoS port).
@@ -325,7 +471,28 @@ struct Check {
 Check g_check;
 
 std::wstring GameDir() { return ExeDir() + L"game"; }
-std::wstring StampPath() { return ExeDir() + L"game_check.txt"; }
+
+// ── the edition in game\ ────────────────────────────────────────────────────────────────────────────────────────────
+// One hppoa.exe plays both: the NTSC-US and PAL (Europe) XBEs are the same code byte for byte, only their headers and
+// the disc's files differ (PAL adds six languages). game\default.xbe's certificate says which (gamefiles_DetectEdition),
+// read at start, after an unpack and before every check: each edition has its own list of the disc's files. Before
+// there is a default.xbe (an image still to unpack) it reads as NTSC-US.
+int g_edition = GAME_EDITION_NONE;
+
+void DetectEdition() {
+    g_edition = gamefiles_DetectEdition(GameDir().c_str());
+    gamefiles_SetEdition(g_edition);
+}
+bool Pal() { return g_edition == GAME_EDITION_PAL; }
+const char* EditionLabel() {
+    switch (g_edition) {
+        case GAME_EDITION_NTSC: return "NTSC-US";
+        case GAME_EDITION_PAL: return "PAL (Europe)";
+        case GAME_EDITION_OTHER: return "not a supported edition";
+        default: return "no default.xbe";
+    }
+}
+std::wstring StampPath() { return BinDir() + L"game_check.txt"; }
 
 std::string Today() {
     SYSTEMTIME t;
@@ -386,6 +553,34 @@ bool StartCheck(bool contents) {
 bool FilesWhole() {
     return g_check.c.missing + g_check.c.wrong_size + g_check.c.wrong_content == 0;
 }
+
+// xboxrecomp: the player knows about these files (2026-11-14): the problems found, as the check names them, kept in the
+// toml (files_problems_hidden) when they tick "I know about these files"; while the folder has exactly those, the report
+// stays folded and the page does not open for them. Anything new (another file, another fault) brings it back
+std::string ProblemSig() {
+    char buf[64];
+    snprintf(buf, sizeof buf, "%08lX:%d:%d:%d", (unsigned long)gamefiles_ListId(), g_check.c.missing,
+             g_check.c.wrong_size, g_check.c.wrong_content);
+    std::string sig = buf;
+    for (int k = 0; k < g_check.c.listed; k++)
+        sig += "," + std::to_string(g_check.c.index[k]) + "/" + std::to_string(g_check.c.kind[k]);
+    return sig;
+}
+
+bool ProblemsHidden() {
+    if (FilesWhole() || !g_check.finished) return false;
+    const std::string v = Value("files_problems_hidden");
+    return !v.empty() && v == ProblemSig();
+}
+
+// at once, not only with Play: a player who ticks it and quits finds it so next time
+void HideProblems(bool hide) {
+    SetValue("files_problems_hidden", hide ? "'" + ProblemSig() + "'" : std::string("''"));
+    std::ofstream f(TomlPath(), std::ios::trunc);
+    for (const auto& l : g_lines) f << l << "\n";
+}
+
+bool FilesOk() { return FilesWhole() || ProblemsHidden(); }
 
 // after a check: a full one recorded; a size check gets the damage the last full one found added, the stamp kept
 void FinishCheck(const Stamp* st = nullptr) {
@@ -452,16 +647,79 @@ void DrawCheck() {
     ImGui::End();
 }
 
-enum class FilesAction { None, Verify };
+// ── Disc image ──────────────────────────────────────────────────────────────────────────────────────────────────────
+// game\ holds a disc image rather than its files: unpacked into game\ on a thread of its own before the game can
+// start (xiso.c, as the PS and CoS launchers). Stopped or failed, the next start carries on where it stopped (files
+// already whole are kept).
+
+struct Unpack {
+    XisoProgress p{};
+    HANDLE thread = nullptr;
+    bool ok = false;
+    std::wstring image, dir;
+    std::string name;  // the image's file name, for the page
+};
+Unpack g_unpack;
+
+DWORD WINAPI UnpackThread(void*) {
+    g_unpack.ok = xiso_Extract(g_unpack.image.c_str(), g_unpack.dir.c_str(), &g_unpack.p);
+    return 0;
+}
+
+bool StartUnpackFrom(const WCHAR* image) {
+    g_unpack = Unpack{};
+    g_unpack.dir = GameDir();
+    g_unpack.image = image;
+    g_unpack.name = Narrow(g_unpack.image.substr(g_unpack.image.find_last_of(L"\\/") + 1));
+    g_unpack.thread = CreateThread(nullptr, 0, UnpackThread, nullptr, 0, nullptr);
+    return g_unpack.thread != nullptr;
+}
+
+// at start: an image in game\ and no default.xbe beside it (never unpacked, or stopped part-way)
+bool StartUnpack() {
+    WCHAR image[MAX_PATH];
+    return xiso_Find(GameDir().c_str(), image) && StartUnpackFrom(image);
+}
+
+void DrawUnpack() {
+    ImGuiIO& io = ImGui::GetIO();
+    float sc = io.FontGlobalScale;
+    float pw = 560 * sc;
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.97f), ImGuiCond_Always, ImVec2(0.5f, 1.0f));
+    ImGui::SetNextWindowSize(ImVec2(pw, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.72f);
+    ImGui::Begin("##unpack", nullptr,
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
+    ImGui::TextUnformatted("Unpacking the game files");
+    ImGui::TextWrapped("From %s into the game folder. This happens once; the disc image is left as it is and can "
+                       "be deleted afterwards.", g_unpack.name.c_str());
+    ImGui::Spacing();
+    double done = double(g_unpack.p.done), total = double(g_unpack.p.total);
+    char text[64];
+    std::snprintf(text, sizeof text, "%.2f of %.2f GB", done / 1e9, total / 1e9);
+    ImGui::ProgressBar(total > 0 ? float(done / total) : 0.0f, ImVec2(-FLT_MIN, 28 * sc), text);
+    ImGui::Spacing();
+    bool cancelling = g_unpack.p.cancel != 0;
+    if (cancelling) ImGui::BeginDisabled();
+    if (ImGui::Button("Cancel", ImVec2(160 * sc, 36 * sc))) InterlockedExchange(&g_unpack.p.cancel, 1);
+    if (cancelling) ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::TextDisabled("The next start carries on where it stopped.");
+    ImGui::End();
+}
+
+enum class FilesAction { None, Verify, Repair };
 
 // the page's game files part: a line when all is well, the files named and what to do when not
 FilesAction DrawFiles(float sc) {
     FilesAction act = FilesAction::None;
-    if (g_check.ran && g_check.finished && !FilesWhole()) {
+    if (g_check.ran && g_check.finished && !FilesWhole() && !ProblemsHidden()) {
         int bad = g_check.c.missing + g_check.c.wrong_size + g_check.c.wrong_content;
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.45f, 0.4f, 1));
         if (g_check.c.missing == gamefiles_Count())
-            ImGui::TextWrapped("No game files found. Put the game's files in the 'game' folder beside the launcher.");
+            ImGui::TextWrapped("No game files found. Put the game's files, or its disc image (.iso / .xiso), in the "
+                               "'game' folder beside the launcher.");
         else
             ImGui::TextWrapped("%d game file%s %s damaged or missing. The game may crash, or lose sound or "
                                "pictures, where it uses them:", bad, bad == 1 ? "" : "s", bad == 1 ? "is" : "are");
@@ -471,8 +729,24 @@ FilesAction DrawFiles(float sc) {
             for (int k = 0; k < shown; k++)
                 ImGui::BulletText("%s (%s)", gamefiles_Name(g_check.c.index[k]), KindName(g_check.c.kind[k]));
             if (bad > shown) ImGui::TextDisabled("...and %d more (all of them in the run log)", bad - shown);
-            ImGui::TextWrapped("Copy them again from your disc or game dump, then press Verify game files.");
+            WCHAR image[MAX_PATH];
+            if (xiso_FindAny(GameDir().c_str(), image)) {
+                std::wstring w(image);
+                std::string name = Narrow(w.substr(w.find_last_of(L"\\/") + 1));
+                if (ImGui::Button(("Repair from " + name).c_str(), ImVec2(-FLT_MIN, 34 * sc))) act = FilesAction::Repair;
+            } else {
+                ImGui::TextWrapped("Copy them again from your disc or game dump, or put the disc image (.iso) in the "
+                                   "'game' folder and the launcher writes them again from it.");
+            }
         }
+    }
+    if (g_check.ran && g_check.finished && !FilesWhole()) {
+        bool hidden = ProblemsHidden();
+        if (hidden) {
+            int bad = g_check.c.missing + g_check.c.wrong_size + g_check.c.wrong_content;
+            ImGui::TextDisabled("%d known file problem%s hidden (untick to see them).", bad, bad == 1 ? "" : "s");
+        }
+        if (ImGui::Checkbox("I know about these files: don't show this again", &hidden)) HideProblems(hidden);
     }
     if (ImGui::Button("Verify game files", ImVec2(200 * sc, 0))) act = FilesAction::Verify;
     ImGui::SameLine();
@@ -594,87 +868,166 @@ bool DrawPage(Settings& s, std::string& error, FilesAction& files) {
                  ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                      ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
 
-    // the shape, two big choices
+    // xboxrecomp: the settings in tabs, as F10's (2026-11-14): Game first (the enhancements, the game files), every
+    // setting the game has; the tabs' contents in a fixed height so the page keeps its place
     float bw = (pw - ImGui::GetStyle().WindowPadding.x * 2 - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-    for (int i = 0; i < 2; i++) {
-        bool on = s.wide == (i == 1);
-        if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.72f, 0.55f, 0.15f, 1.0f));
-        if (ImGui::Button(i ? "16:9  widescreen" : "4:3  original", ImVec2(bw, 44 * sc))) {
-            s.wide = i == 1;
-            FitSize(s);
+    // the tabs fill what is left between the title (DrawBackground's two lines) and the page's foot, whose height is
+    // taken from the frame before (the Play row, notes and messages under the tabs)
+    static float foot = 260.0f * sc;
+    const float big = std::min(io.DisplaySize.y * 0.15f, io.DisplaySize.x * 0.13f);
+    const float title_end = io.DisplaySize.y * 0.05f + big * 0.9f + big * 0.62f * 0.9f + 16.0f * sc;
+    const float tab_h = std::max(160.0f * sc, io.DisplaySize.y * 0.97f - title_end - foot);
+    auto opts = [&](const char* tab) {
+        static const char* const kSpeakerChoice[] = {"Stereo", "5.1 surround"};
+        for (int i = 0; i < kOptCount; i++) {
+            const Opt& o = kOpts[i];
+            if (std::strcmp(o.tab, tab)) continue;
+            switch (o.type) {
+                case kHeader:
+                    ImGui::Spacing();
+                    ImGui::SeparatorText(o.label);
+                    break;
+                case kCheck:
+                case kResponsive: {
+                    bool v = s.opt[i] != 0;
+                    if (ImGui::Checkbox(o.label, &v)) s.opt[i] = v;
+                    break;
+                }
+                case kCheckNot: {
+                    bool v = s.opt[i] == 0;
+                    if (ImGui::Checkbox(o.label, &v)) s.opt[i] = !v;
+                    break;
+                }
+                case kSlider:
+                    ImGui::SliderInt(o.label, &s.opt[i], o.lo, o.hi, o.fmt);
+                    break;
+                case kChoice:
+                    ImGui::Combo(o.label, &s.opt[i], o.names, o.hi - o.lo + 1);
+                    break;
+                case kSpeakers:
+                    ImGui::Combo(o.label, &s.opt[i], kSpeakerChoice, 2);
+                    break;
+            }
+            if (o.note) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+                ImGui::TextWrapped("%s", o.note);
+                ImGui::PopStyleColor();
+            }
         }
-        if (on) ImGui::PopStyleColor();
-        if (!i) ImGui::SameLine();
-    }
-    ImGui::Spacing();
+    };
     ImGui::PushItemWidth(pw * 0.5f);
-
-    ImGui::Combo("Display mode", &s.display, kDisplayNames, 3);
-    {
-        auto sizes = Sizes(s.wide);
-        std::string cur = std::to_string(s.width) + " x " + std::to_string(s.height);
-        if (ImGui::BeginCombo(s.display == 0 ? "Window size" : "Resolution", cur.c_str())) {
-            for (auto [w, h] : sizes) {
-                std::string name = std::to_string(w) + " x " + std::to_string(h);
-                if (std::pair{w, h} == ScreenMax()) name += "  (screen)";
-                if (ImGui::Selectable(name.c_str(), w == s.width && h == s.height)) {
-                    s.width = w;
-                    s.height = h;
+    if (ImGui::BeginTabBar("##tabs")) {
+        auto tab = [&](const char* name) {
+            if (!ImGui::BeginTabItem(name)) return false;
+            ImGui::BeginChild("##tab", ImVec2(0, tab_h), false);
+            return true;
+        };
+        auto end_tab = [] {
+            ImGui::EndChild();
+            ImGui::EndTabItem();
+        };
+        if (tab("Game")) {
+            ImGui::TextDisabled("Game disc: %s", EditionLabel());
+            if (Pal()) {
+                ImGui::Combo("Language", &s.language, kLanguageNames, kLanguageCount);
+            } else {
+                ImGui::BeginDisabled();
+                int english = 0;
+                ImGui::Combo("Language", &english, kLanguageNames, 1);
+                ImGui::EndDisabled();
+                ImGui::SameLine();
+                ImGui::TextDisabled("(the NTSC-US disc is English only)");
+            }
+            opts("Game");
+            ImGui::Spacing();
+            ImGui::SeparatorText("Game files");
+            files = DrawFiles(sc);
+            end_tab();
+        }
+        if (tab("Display")) {
+            static const char* const kAspectNames[] = {"4:3 (original)", "16:9 (widescreen)"};
+            int aspect = s.wide ? 1 : 0;
+            if (ImGui::Combo("Aspect ratio", &aspect, kAspectNames, 2) && (aspect == 1) != s.wide) {
+                s.wide = aspect == 1;
+                FitSize(s);
+            }
+            ImGui::Combo("Display mode", &s.display, kDisplayNames, 3);
+            {
+                auto sizes = Sizes(s.wide);
+                std::string cur = std::to_string(s.width) + " x " + std::to_string(s.height);
+                if (ImGui::BeginCombo(s.display == 0 ? "Window size" : "Resolution", cur.c_str())) {
+                    for (auto [w, h] : sizes) {
+                        std::string name = std::to_string(w) + " x " + std::to_string(h);
+                        if (std::pair{w, h} == ScreenMax()) name += "  (screen)";
+                        if (ImGui::Selectable(name.c_str(), w == s.width && h == s.height)) {
+                            s.width = w;
+                            s.height = h;
+                        }
+                    }
+                    ImGui::EndCombo();
                 }
             }
-            ImGui::EndCombo();
+            ImGui::Checkbox("Vsync", &s.vsync);
+            const char* const kRate[] = {"60 fps", "30 fps (the game's own)"};
+            ImGui::Combo("Frame rate", &s.fps30, kRate, 2);
+            opts("Display");
+            end_tab();
         }
-    }
-    {
-        auto choices = InternalChoices(ScreenMax().second, s.internal_height);
-        const InternalChoice* cur = &choices.front();
-        for (const auto& c : choices)
-            if (c.lines == s.internal_height) cur = &c;
-        if (ImGui::BeginCombo("Internal resolution", cur->name.c_str())) {
+        if (tab("Graphics")) {
+            auto choices = InternalChoices(ScreenMax().second, s.internal_height);
+            const InternalChoice* cur = &choices.front();
             for (const auto& c : choices)
-                if (ImGui::Selectable(c.name.c_str(), &c == cur)) s.internal_height = c.lines;
-            ImGui::EndCombo();
+                if (c.lines == s.internal_height) cur = &c;
+            if (ImGui::BeginCombo("Internal resolution", cur->name.c_str())) {
+                for (const auto& c : choices)
+                    if (ImGui::Selectable(c.name.c_str(), &c == cur)) s.internal_height = c.lines;
+                ImGui::EndCombo();
+            }
+            int ms = IndexOf(kMsaaValues, s.msaa);
+            if (ImGui::Combo("MSAA", &ms, kMsaaNames, int(std::size(kMsaaNames)))) s.msaa = kMsaaValues[ms];
+            ImGui::Checkbox("SMAA", &s.smaa);
+            int an = IndexOf(kAnisoValues, s.aniso);
+            if (ImGui::Combo("Anisotropic filtering", &an, kAnisoNames, int(std::size(kAnisoNames)))) s.aniso = kAnisoValues[an];
+            opts("Graphics");
+            end_tab();
         }
+        if (tab("Post-processing")) {
+            opts("Post-processing");
+            end_tab();
+        }
+        if (tab("Audio")) {
+            ImGui::Combo("Speakers", &s.speakers, kSpeakerNames, 2);
+            if (s.speakers) ImGui::TextDisabled("5.1 needs Windows' speaker setup set to 5.1 (or a 5.1 HDMI receiver).");
+            end_tab();
+        }
+        if (tab("Controls")) {
+            ImGui::Checkbox("Keyboard and mouse", &s.kbm);
+            int sens = int(s.mouse_sens);
+            if (ImGui::SliderInt("Mouse sensitivity", &sens, 1, 100)) s.mouse_sens = uint32_t(sens);
+            ImGui::Checkbox("Use controller", &s.controller);
+            ImGui::Checkbox("Invert camera X", &s.invert_x);
+            ImGui::SameLine(0, 30 * sc);
+            ImGui::Checkbox("Invert camera Y", &s.invert_y);
+            ImGui::Checkbox("Vibration", &s.vibration);
+            opts("Controls");
+            ImGui::TextDisabled("Key bindings and button remapping: F10 > Controls in the game.");
+            end_tab();
+        }
+        if (tab("Accessibility")) {
+            ImGui::Combo("Colour-blind filter", &s.colorblind, kColorBlindNames, 4);
+            if (s.colorblind) {
+                int st = int(s.cb_strength);
+                if (ImGui::SliderInt("Filter strength %", &st, 0, 100)) s.cb_strength = uint32_t(st);
+            }
+            end_tab();
+        }
+        ImGui::EndTabBar();
     }
-    int ms = IndexOf(kMsaaValues, s.msaa);
-    if (ImGui::Combo("MSAA", &ms, kMsaaNames, int(std::size(kMsaaNames)))) s.msaa = kMsaaValues[ms];
-    int an = IndexOf(kAnisoValues, s.aniso);
-    if (ImGui::Combo("Anisotropic filtering", &an, kAnisoNames, int(std::size(kAnisoNames)))) s.aniso = kAnisoValues[an];
-    ImGui::Checkbox("SMAA", &s.smaa);
-    ImGui::SameLine(0, 30 * sc);
-    ImGui::Checkbox("Vsync", &s.vsync);
-    const char* const kRate[] = {"60 fps", "30 fps (the game's own)"};
-    ImGui::Combo("Frame rate", &s.fps30, kRate, 2);
-    ImGui::Combo("Speakers", &s.speakers, kSpeakerNames, 2);
-    if (s.speakers) ImGui::TextDisabled("5.1 needs Windows' speaker setup set to 5.1 (or a 5.1 HDMI receiver).");
-    ImGui::Combo("Colour-blind filter", &s.colorblind, kColorBlindNames, 4);
-    if (s.colorblind) {
-        int st = int(s.cb_strength);
-        if (ImGui::SliderInt("Filter strength %", &st, 0, 100)) s.cb_strength = uint32_t(st);
-    }
-    ImGui::Checkbox("Keyboard and mouse", &s.kbm);
-    if (s.kbm) {
-        ImGui::SameLine(0, 30 * sc);
-        ImGui::SetNextItemWidth(pw * 0.3f);
-        int ms = int(s.mouse_sens);
-        if (ImGui::SliderInt("Mouse sensitivity", &ms, 1, 100)) s.mouse_sens = uint32_t(ms);
-    }
-    ImGui::Checkbox("Use controller", &s.controller);
-    ImGui::SameLine(0, 30 * sc);
-    ImGui::Checkbox("Vibration", &s.vibration);
-    ImGui::SameLine(0, 30 * sc);
-    ImGui::Checkbox("Invert camera X", &s.invert_x);
-    ImGui::SameLine(0, 30 * sc);
-    ImGui::Checkbox("Invert camera Y", &s.invert_y);
-    ImGui::TextDisabled("Key bindings, button remapping and stick settings: F10 > Controls in the game.");
     ImGui::PopItemWidth();
-
-    ImGui::Spacing();
-    files = DrawFiles(sc);
     ImGui::Spacing();
     bool skip = !s.show;
     if (ImGui::Checkbox("Don't show this at the next startup", &skip)) s.show = !skip;
-    if (skip) ImGui::TextDisabled("Play starts the game directly. Hold Shift while starting, or use F10 in the game, to bring this back.");
+    if (skip) ImGui::TextDisabled("Play starts the game directly. Hold Shift while starting to bring this back.");
     ImGui::Spacing();
     bool play = false;
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.45f, 0.15f, 1.0f));
@@ -685,7 +1038,11 @@ bool DrawPage(Settings& s, std::string& error, FilesAction& files) {
     ImGui::SameLine();
     if (ImGui::Button("Quit", ImVec2(bw, 40 * sc))) PostQuitMessage(0);
     if (!error.empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", error.c_str());
-    ImGui::TextDisabled("Saved to hppoa.toml. F10 in the game changes the picture settings too.");
+    {   // this frame's own layout (where the last item ends, less the tabs' area): the window's height is a frame
+        // late (it sizes to its contents), and following it made the page bounce
+        const float f = ImGui::GetCursorPosY() + ImGui::GetStyle().WindowPadding.y - tab_h;
+        if (std::fabs(f - foot) > 1.0f) foot = f;
+    }
     ImGui::End();
 
     if (play) Save(s);
@@ -696,11 +1053,14 @@ bool DrawPage(Settings& s, std::string& error, FilesAction& files) {
 
 int WINAPI WinMain(HINSTANCE inst, HINSTANCE, LPSTR, int show) {
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-    const bool unpacking = false;  // no disc image unpacking in this launcher
+    MoveIntoBin();  // xboxrecomp (hppoa): an update over a v0.1.0 folder keeps its settings, file check and shaders
+    // xboxrecomp: a disc image to unpack first shows its progress page even with the settings page turned off
+    bool unpacking = StartUnpack();
     // xboxrecomp: then the game files: read through on a fresh start (a page with its progress), otherwise their sizes
     // only, here (a few ms)
     bool checking = false;
     if (!unpacking) {
+        DetectEdition();  // the list the stamp and the check below are made under
         Stamp st = ReadStamp();
         if (!st.valid) {
             checking = StartCheck(true);  // a fresh start: every byte, once
@@ -713,7 +1073,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE, LPSTR, int show) {
     }
     // the page was turned off: straight to the game with the saved settings, unless Shift is held or a file is wrong
     bool shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
-    if (!checking && FilesWhole() && !Load().show && !shift && StartGame()) {
+    if (!unpacking && !checking && !Load().show && FilesOk() && !shift && StartGame()) {
         CoUninitialize();
         return 0;
     }
@@ -771,7 +1131,21 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE, LPSTR, int show) {
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
         DrawBackground();
-        if (checking) {
+        if (unpacking) {
+            DrawUnpack();
+            if (WaitForSingleObject(g_unpack.thread, 0) == WAIT_OBJECT_0) {
+                CloseHandle(g_unpack.thread);
+                g_unpack.thread = nullptr;
+                unpacking = false;
+                if (!g_unpack.ok) {
+                    error = Narrow(g_unpack.p.error) + " The game can't start until it is unpacked; open the launcher "
+                            "again to carry on.";
+                } else {
+                    DetectEdition();  // a fresh unpack: the list of the edition now there
+                    checking = StartCheck(true);  // what was written, read back against the list
+                }
+            }
+        } else if (checking) {
             DrawCheck();
             if (WaitForSingleObject(g_check.thread, 0) == WAIT_OBJECT_0) {
                 CloseHandle(g_check.thread);
@@ -779,14 +1153,26 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE, LPSTR, int show) {
                 checking = false;
                 FinishCheck();
                 // the page was turned off: on to the game as before, when every file is whole
-                if (g_check.finished && FilesWhole() && !s.show && !shift && StartGame()) started = true;
+                if (g_check.finished && FilesOk() && !s.show && !shift && StartGame()) started = true;
             }
         } else if (FilesAction files = FilesAction::None; DrawPage(s, error, files)) {
-            if (StartGame()) started = true;
-            else error = "hppoa.exe could not be started (it must sit beside the launcher).";
+            WCHAR image[MAX_PATH];
+            if (xiso_Find(GameDir().c_str(), image))  // stopped part-way: not playable yet
+                error = "The game files are not unpacked yet. Open the launcher again to carry on.";
+            else if (StartGame()) started = true;
+            else error = "hppoa.exe could not be started (it must be in the bin folder beside the launcher).";
         } else if (files == FilesAction::Verify) {
             error.clear();
+            DetectEdition();  // a swapped folder: the list of the edition now there
             checking = StartCheck(true);
+        } else if (files == FilesAction::Repair) {
+            // the damaged ones removed, then the image unpacked over the folder: only what is not whole is written
+            WCHAR image[MAX_PATH];
+            error.clear();
+            if (xiso_FindAny(GameDir().c_str(), image)) {
+                gamefiles_RemoveDamaged(GameDir().c_str(), &g_check.c);
+                unpacking = StartUnpackFrom(image);
+            }
         }
         ImGui::Render();
         const float black[4] = {0, 0, 0, 1};
@@ -796,6 +1182,12 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE, LPSTR, int show) {
         g_swap->Present(1, 0);
     }
 done:
+    // closed while unpacking: stop it (the file being written is removed; the next start carries on)
+    if (g_unpack.thread) {
+        InterlockedExchange(&g_unpack.p.cancel, 1);
+        WaitForSingleObject(g_unpack.thread, INFINITE);
+        CloseHandle(g_unpack.thread);
+    }
     // closed while checking: stopped, no stamp written, so the next start checks again
     if (g_check.thread) {
         InterlockedExchange(&g_check.c.cancel, 1);

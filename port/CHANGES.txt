@@ -1,6 +1,51 @@
 HARRY POTTER AND THE PRISONER OF AZKABAN - PC PORT: CHANGES
 ===========================================================
 
+v0.2.0
+------
+
+New
+- PC Settings in the game's own menus: press Y on the main menu or the
+  pause menu. Display, graphics (field of view first), post-processing,
+  audio, controls, accessibility and enhancements, with the controller or
+  the keyboard, saved as you go. F10 still has everything, plus the key
+  bindings and button remapping.
+- The European (PAL) disc plays too: one port for both editions. With the
+  PAL disc the launcher's Language setting picks English, French, German,
+  Spanish or Italian.
+- Disc images: put your .xiso / .iso in the game folder and the launcher
+  unpacks it the first time it starts.
+- Skip the EA and Warner Bros. logos at start (PC Settings > Enhancements;
+  off by default).
+- The arrow keys move through the menus (pause menu, inventory, front end)
+  and turn the camera in play (PC Settings > Controls > Camera keys in
+  menus).
+- A tidier folder, as the CoS and PS ports have it: only the launcher, the
+  readme files, licenses\, game\ and saves\ at the top; the game, its
+  settings, logs and shaders in bin\. Updating from v0.1.0, the launcher
+  moves your settings, shaders and file check in by itself.
+
+16:9
+- The wider picture shows more at the sides instead of zooming in: the same
+  height and character size as 4:3, in play and with the cutscene bars on.
+- Cutscenes without black bars show the console's cutscene picture filling
+  the screen, framed as it is between the bars in 4:3.
+- The animated portraits (the Fat Lady, the knight) keep their 4:3
+  proportions instead of looking squeezed and zoomed in.
+- No black square in the corner of the inventory's Quests page.
+- "Pausing" stays in the middle of the screen when you pause.
+
+Fixes
+- "Exit to Desktop" closes the game straight away instead of freezing on
+  its last picture.
+- Responsive movement retuned: turning round on the spot from standing or
+  walking plays at a natural speed, and keyboard turns no longer rubber-band.
+- Carrying (Ron with Harry on the train) plays as on the console: Responsive
+  movement leaves it alone.
+
+Removed
+- The F6 trainer.
+
 v0.1.0 - the first release
 --------------------------
 

@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# The build players get: configures build-release (HPPOA_RELEASE=ON: F6's trainer and F12's captures off, the
+# The build players get: configures build-release (HPPOA_RELEASE=ON: no trainer, F12's captures off, the
 # version in the run log), builds the game and the launcher, and puts in dist/hppoa-<version>/:
-#   hppoa_launcher.exe            setup: 4:3 / 16:9, graphics, controls, the game files check; starts the game
-#   hppoa.exe                     the game
-#   shadercache\base_shaders.bin  shaders compiled ahead (read only; the player's own go in shaders.bin)
-#   README.txt                    requirements, installing, controls, the F10 options
-#   CHANGES.txt                   what changed in each release
-#   licenses\                     the licences of the code built into the executables
-# and zips the folder as dist/hppoa_v<version>_windows.zip. Players put the folder's contents beside their game\
-# folder (default.xbe and the disc's files); hppoa.toml, saves\ and the rest of shadercache\ are made on first run.
+#   hppoa_launcher.exe                setup: 4:3 / 16:9, graphics, controls, the game files check; starts the game
+#   bin\hppoa.exe                     the game (both editions: NTSC-US and PAL are the same code)
+#   bin\shadercache\base_shaders.bin  shaders compiled ahead (read only; the player's own go in shaders.bin)
+#   README.txt                        requirements, installing, controls, PC Settings
+#   CHANGES.txt                       what changed in each release
+#   licenses\                         the licences of the code built into the executables
+# and zips the folder as dist/hppoa_v<version>_windows.zip, laid out as the CoS and PS ports are (v0.2.0): all the
+# program is in bin\ but the launcher. Players put their game\ folder beside the launcher; saves\ is made there on
+# first run, and bin\hppoa.toml, bin\logs\ and the rest of bin\shadercache\ in bin\ (the launcher moves a v0.1.0
+# folder's settings and shaders in).
 #   VERSION=0.1.0 tools/package_release.sh        (from port/; VERSION defaults to CMakeLists.txt's)
 set -euo pipefail
 port="$(cd "$(dirname "$0")/.." && pwd)"
@@ -34,7 +36,9 @@ dist="$port/dist/hppoa-$version"
 # Never delete the folder: players and testers drop game\, settings and saves into it. Only the files below are
 # replaced; anything else found there is left alone (the HP:PS port lost a game\ folder to an rm -rf of its dist).
 mkdir -p "$dist"
-cp -f build-release/hppoa.exe build-release/hppoa_launcher.exe "$dist/"
+mkdir -p "$dist/bin"
+cp -f build-release/hppoa_launcher.exe "$dist/"
+cp -f build-release/hppoa.exe "$dist/bin/"
 cp -f README.txt "$dist/"
 cp -f CHANGES.txt "$dist/"
 # licence texts: the LGPL code from xemu (src/apu, src/nv2a) is linked into hppoa.exe, and the LGPL requires a copy
@@ -48,18 +52,18 @@ cp -f "$port/src/renderer/LICENSE.SCDA" "$dist/licenses/SCDA-XBERecomp.txt"
 cp -f "$port/third_party/imgui/LICENSE.txt" "$dist/licenses/DearImGui.txt"
 cp -f "$port/src/launcher/font/MagicSchool-licensing.txt" "$dist/licenses/MagicSchool-font.txt"
 
-# res/base_shaders.bin (not in git) ships as shadercache\base_shaders.bin: a player's first visit to an area then
+# res/base_shaders.bin (not in git) ships as bin\shadercache\base_shaders.bin: a player's first visit to an area then
 # needs fewer shaders compiled. Refresh it from a play-through's shadercache\shaders.bin when shader generation
 # changes; old entries simply stop matching
 if [ -s res/base_shaders.bin ]; then
-    mkdir -p "$dist/shadercache"
-    cp -f res/base_shaders.bin "$dist/shadercache/base_shaders.bin"
+    mkdir -p "$dist/bin/shadercache"
+    cp -f res/base_shaders.bin "$dist/bin/shadercache/base_shaders.bin"
 else
     echo "warning: res/base_shaders.bin missing, no base shaders shipped" >&2
 fi
 
 # the security bits every player build must carry
-for exe in "$dist"/*.exe; do
+for exe in "$dist"/*.exe "$dist"/bin/*.exe; do
     bits=$("$objdump" -p "$exe" | grep -A4 DllCharacteristics)
     for want in HIGH_ENTROPY_VA DYNAMIC_BASE NX_COMPAT; do
         grep -q "$want" <<< "$bits" || { echo "$exe: $want missing" >&2; exit 1; }
@@ -68,13 +72,13 @@ done
 
 # every DLL either exe imports must come with Windows 10/11 itself (the C/C++ runtimes are linked in statically)
 builtin='^(api-ms-win-.*|kernel32|user32|gdi32|shell32|ole32|oleaut32|winmm|dwmapi|dbghelp|d3d11|d3d12|dxgi|d3dcompiler_47|xaudio2_8|xaudio2_9|xinput1_4|mfplat|mfreadwrite|windowscodecs|imm32|comctl32|comdlg32|advapi32|ws2_32|bcrypt|ntdll|uxtheme|shlwapi|setupapi|hid|msvcrt|ucrtbase)\.dll$'
-for exe in "$dist"/*.exe; do
+for exe in "$dist"/*.exe "$dist"/bin/*.exe; do
     while read -r dll; do
         grep -Eq "$builtin" <<< "$dll" || { echo "$(basename "$exe") needs $dll, which Windows does not ship" >&2; exit 1; }
     done < <("$objdump" -p "$exe" | sed -n 's/^\s*DLL Name: //p' | tr 'A-Z' 'a-z' | sort -u)
 done
 
-ls -la "$dist"
+ls -la "$dist" "$dist/bin"
 
 # the zip players download: only what this script put in the folder, at its top. Never the whole folder: a tester's
 # game\ files, settings, saves or shaders.bin may be in it, and none of those may be handed out
@@ -83,7 +87,7 @@ rm -f "$zip"
 python3 - "$dist" "$zip" <<'PY'
 import os, sys, zipfile
 src, out = sys.argv[1], sys.argv[2]
-ship = ["hppoa_launcher.exe", "hppoa.exe", "README.txt", "CHANGES.txt", "shadercache/base_shaders.bin"]
+ship = ["hppoa_launcher.exe", "bin/hppoa.exe", "README.txt", "CHANGES.txt", "bin/shadercache/base_shaders.bin"]
 ship += ["licenses/" + f for f in sorted(os.listdir(os.path.join(src, "licenses")))]
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
     for rel in ship:

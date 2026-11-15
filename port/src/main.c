@@ -453,7 +453,8 @@ static LONG CALLBACK veh_handler(PEXCEPTION_POINTERS ep)
 /* The game edition this recompile was made from: its XBE's title ID, entry point, section count and code section
  * (.text). Another edition (another region, a multi-language release) lays its code out differently, and the
  * recompiled code would run it as garbage and stop at once; it is turned away with a message naming the edition.
- * Header-only changes (a region-free patch) keep these and pass. */
+ * Header-only changes (a region-free patch) keep these and pass, and so does the PAL (Europe) release: its XBE is the
+ * NTSC-US code byte for byte under another header (region, languages, signature), so one recompile plays both. */
 static int xbe_is_expected_edition(const uint8_t *x, size_t n)
 {
     const uint32_t want_tid = 0x4541004Cu, want_entry = 0x000111DBu, want_sections = 13u;
@@ -477,10 +478,11 @@ static int xbe_is_expected_edition(const uint8_t *x, size_t n)
            tid, entry, sections, text_va, text_size, n, want_tid, want_entry, want_sections, want_text_va, want_text_size);
     char msg[640];
     snprintf(msg, sizeof msg,
-             "This recompile is made from the NTSC-US (USA) release of Harry Potter and the Prisoner of Azkaban.\n\n"
+             "This recompile is made from the NTSC-US (USA) and PAL (Europe) releases of Harry Potter and the\n"
+             "Prisoner of Azkaban.\n\n"
              "The default.xbe in the 'game' folder is a different edition (title ID %08X, %zu bytes, %u sections),\n"
              "whose code does not match, so it cannot run.\n\n"
-             "Please use the NTSC-US (USA) release (default.xbe: title ID %08X, 3190784 bytes).",
+             "Please use the NTSC-US (USA) or PAL (Europe) release (default.xbe: title ID %08X, 3190784 bytes).",
              tid, n, sections, want_tid);
     MessageBoxA(NULL, msg, "Unsupported game version", MB_ICONERROR);
     return 0;

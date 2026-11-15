@@ -19,4 +19,5 @@ python3 -m tools.recomp game/default.xbe --all --split 1000 --gen-dir port/src/r
     --exclude-manual port/src/hle_loader.c \
     --exclude-manual port/src/hle_portals.c \
     --exclude-manual port/src/recomp_extra.c \
+    --exclude-manual port/src/hle_video.c \
     --exclude-manual port/src/renderer/xdk/hle_d3d8.cpp

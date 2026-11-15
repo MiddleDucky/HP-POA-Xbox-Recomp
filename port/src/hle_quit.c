@@ -250,11 +250,115 @@ int hppoa_Paused(void) { return g_paused; }
 /* d3d12.cpp: the legal notices at start, kept 4:3 in 16:9 as the movies around them are */
 int hppoa_LegalScreen(void) { return !strcmp(g_screen, "legalsandmemorycard"); }
 
+/* ── PC Settings: the F10 settings in a box of the menus' own look, from the main menu and the pause menu ──────────
+ *
+ * HP:CoS puts "PC Settings" as the first row of the game's Options. Here the menus are Apt (Flash) movies that keep
+ * their rows and their highlighted row to themselves, so, as with Quit To Desktop, it is a button of its own: Y beside
+ * the quit prompt (on the same screens, while the quit prompt is up) opens a box drawn by the overlay (menu.cpp,
+ * DrawPcSettings) in the game's font. A list of pages (Display, Graphics, ...), then a page's rows with their values;
+ * up and down choose, left and right (held: repeating) or A change a value, B goes back a level, B on the list or
+ * Start closes it. The rows and their saving are menu.cpp's (app_GameOpt*, as HP:CoS's), saved to hppoa.toml as F10
+ * saves them. Key bindings, button remapping and Debug stay in F10. While it is up the game sees the pad at rest, and
+ * after it closes until every button is let go (B does not reach the menu under it). */
+#define PAD_UP    0x0001u
+#define PAD_DOWN  0x0002u
+#define PAD_LEFT  0x0004u
+#define PAD_RIGHT 0x0008u
+enum { kPcStick = 16000, kPcShown = 9, kPcRepeatMs = 400, kPcRepeatEveryMs = 80, kPcList = -1 };
+extern int app_GameOptRows(int page);          /* renderer/app/menu.cpp: the settings' pages */
+extern void app_GameOptStep(int page, int row, int dir);
+extern void app_GameOptLeave(int page);        /* a page's held choice (the window's size) applied */
+static volatile int g_pc;                      /* 0 closed, 1 open, 2 closed, the pad held at rest until let go */
+static volatile int g_pc_page = kPcList, g_pc_sel, g_pc_top;
+static int g_pc_list_sel;
+
+/* menu.cpp: the box is up, and where it is */
+int hppoa_PcSettings(int *page, int *sel, int *top)
+{
+    if (g_pc != 1) return 0;
+    *page = g_pc_page, *sel = g_pc_sel, *top = g_pc_top;
+    return 1;
+}
+
+static void pc_close(void)
+{
+    if (g_pc_page >= 0) app_GameOptLeave(g_pc_page);
+    g_pc_page = kPcList;
+    g_pc = 2;
+    fprintf(stderr, "[PCSET] closed\n");
+}
+
+/* a direction held: once as it is pressed, then every kPcRepeatEveryMs after kPcRepeatMs */
+static int pc_repeat(int dir, int *prev, DWORD *t_first, DWORD *t_last)
+{
+    DWORD now = GetTickCount();
+    if (!dir) {
+        *prev = 0;
+        return 0;
+    }
+    if (dir != *prev) {
+        *prev = dir;
+        *t_first = *t_last = now;
+        return dir;
+    }
+    if (now - *t_first >= kPcRepeatMs && now - *t_last >= kPcRepeatEveryMs) {
+        *t_last = now;
+        return dir;
+    }
+    return 0;
+}
+
+/* one pad's presses on the open box (either stick or the d-pad; the keyboard's movement keys and arrows are the
+ * sticks) */
+static void pc_input(int port, const XBOX_GAMEPAD *g, int a_edge, int b_edge, int start_edge, int back_edge)
+{
+    static int prev_v[4], prev_h[4];
+    static DWORD v_first[4], v_last[4], h_first[4], h_last[4];
+    int up = (g->wButtons & PAD_UP) || g->sThumbLY > kPcStick || g->sThumbRY > kPcStick;
+    int down = (g->wButtons & PAD_DOWN) || g->sThumbLY < -kPcStick || g->sThumbRY < -kPcStick;
+    int left = (g->wButtons & PAD_LEFT) || g->sThumbLX < -kPcStick || g->sThumbRX < -kPcStick;
+    int right = (g->wButtons & PAD_RIGHT) || g->sThumbLX > kPcStick || g->sThumbRX > kPcStick;
+    int v = pc_repeat(up ? -1 : down ? 1 : 0, &prev_v[port], &v_first[port], &v_last[port]);
+    int h = pc_repeat(left ? -1 : right ? 1 : 0, &prev_h[port], &h_first[port], &h_last[port]);
+
+    int page = g_pc_page, sel = g_pc_sel, n = app_GameOptRows(page);
+    if (v) sel += v;
+    if (h && page >= 0) app_GameOptStep(page, sel, h);
+    if (start_edge) {
+        pc_close();
+        return;
+    }
+    if (a_edge) {
+        if (page == kPcList) {
+            g_pc_list_sel = sel;
+            page = sel, sel = 0, g_pc_top = 0;
+        } else {
+            app_GameOptStep(page, sel, 1);
+        }
+    } else if (b_edge || back_edge) {
+        if (page >= 0) {
+            app_GameOptLeave(page);
+            page = kPcList, sel = g_pc_list_sel, g_pc_top = 0;
+        } else {
+            pc_close();
+            return;
+        }
+    }
+    n = app_GameOptRows(page);
+    if (sel >= n) sel = n - 1;
+    if (sel < 0) sel = 0;
+    int top = g_pc_top;
+    if (sel < top) top = sel;
+    if (sel >= top + kPcShown) top = sel - kPcShown + 1;
+    g_pc_page = page, g_pc_sel = sel, g_pc_top = top;
+}
+
 /* 0 nothing, 1 the prompt, 2 the box (menu.cpp draws them) */
 int hppoa_MenuMovie(void);  /* hle_video.c: a movie is playing over the menus */
 
 int hppoa_QuitState(void)
 {
+    if (g_pc) return 0;  /* PC Settings is up (or just closed): its own box, no prompt */
     if (g_box == 1) return 2;
     if (g_sub) return 0;
     if (g_hidden_at) {
@@ -278,7 +382,7 @@ static int any_down(const XBOX_GAMEPAD *g)
 /* hle_input.c: each pad as the game is about to read it */
 void hppoa_QuitPad(int port, XBOX_GAMEPAD *g)
 {
-    static uint8_t prev_back[4], prev_a[4], prev_b[4], prev_start[4];
+    static uint8_t prev_back[4], prev_a[4], prev_b[4], prev_start[4], prev_y[4];
     if (port < 0 || port > 3) return;
     static int seen = -1;
     int now = hppoa_QuitState();
@@ -290,11 +394,25 @@ void hppoa_QuitPad(int port, XBOX_GAMEPAD *g)
     int start = (g->wButtons & PAD_START) != 0;
     int back_edge = back && !prev_back[port], a_edge = a && !prev_a[port], b_edge = b && !prev_b[port];
     int start_edge = start && !prev_start[port];
+    int y = g->bAnalogButtons[3] > PRESSED, y_edge = y && !prev_y[port];
     prev_back[port] = (uint8_t)back, prev_a[port] = (uint8_t)a, prev_b[port] = (uint8_t)b, prev_start[port] = (uint8_t)start;
+    prev_y[port] = (uint8_t)y;
     if (apt_trace() && (a_edge || b_edge || start_edge || back_edge))
         fprintf(stderr, "[APT] %lu pad %s%s%s%s screen %s paused %d\n", (unsigned long)GetTickCount(), a_edge ? "A" : "",
                 b_edge ? "B" : "", start_edge ? "Start" : "", back_edge ? "Back" : "", g_screen, g_paused);
 
+    if (g_pc == 1) {
+        pc_input(port, g, a_edge, b_edge, start_edge, back_edge);
+        memset(g, 0, sizeof *g);
+        return;
+    }
+    if (g_pc == 2) {
+        if (any_down(g)) {
+            memset(g, 0, sizeof *g);
+            return;
+        }
+        g_pc = 0;
+    }
     if (g_box == 1) {
         if (a_edge) {
             fprintf(stderr, "[QUIT] quit to desktop\n");
@@ -332,7 +450,15 @@ void hppoa_QuitPad(int port, XBOX_GAMEPAD *g)
         memset(g, 0, sizeof *g);
         return;
     }
+    if (y_edge) {
+        g_pc_page = kPcList, g_pc_sel = g_pc_top = g_pc_list_sel = 0;
+        g_pc = 1;
+        fprintf(stderr, "[PCSET] open on screen %s\n", g_screen);
+        memset(g, 0, sizeof *g);
+        return;
+    }
     g->wButtons &= (uint16_t)~PAD_BACK;
+    g->bAnalogButtons[3] = 0;  /* Y is PC Settings's here, not the menu's */
 }
 
 /* RECOMP_APT_TRACE=1: [UIVAR] each variable the game sets in the HUD's Flash movie (sub_001AD3B0(name, value), the

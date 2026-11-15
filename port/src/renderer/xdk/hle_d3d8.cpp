@@ -642,6 +642,20 @@ extern "C" uint32_t hppoa_CaptureBursts(void) { return gpu::g_capture_bursts.loa
 // xboxrecomp: the run is 16:9 (hle_video.c widens the 4:3 cameras)
 extern "C" int hppoa_Widescreen(void) { return app::BootAspect() == app::AspectMode::Wide; }
 
+// xboxrecomp (hppoa): hle_widescreen.c, is the game drawing to the screen (a back buffer) or into a texture (the
+// animated portraits, issue #3)? Only the screen is shown 16:9; a texture keeps its own shape. w, h: the back
+// buffer's size in the game's units
+extern "C" int hppoa_TargetIsScreen(uint32_t* w, uint32_t* h) {
+    std::lock_guard<std::recursive_mutex> lock(g_lock);
+    *w = 640;
+    *h = 480;
+    if (g_buffers[1]) gpu::SurfaceSize(SurfaceOf(g_buffers[1]), *w, *h);
+    const uint32_t rt = Dev(kDevRenderTarget);
+    for (uint32_t i = 0; i < g_buffer_count; i++)
+        if (g_buffers[i] && g_buffers[i] == rt) return 1;
+    return 0;
+}
+
 // xboxrecomp (hppoa): hle_widescreen.c, the camera being set up is a cutscene's, its letterbox not drawn. On the
 // game thread, so the draws recorded after it (this frame's) carry it to the renderer in order
 extern "C" void hppoa_SetCutsceneBars(int on) {

@@ -4806,8 +4806,14 @@ void SqueezeCos(const State& s, const Assembled& a, const DrawShaders& sh, uint3
     }
     // not the inventory, which pauses the game too: its left page (Quests, the item grid, the books and "Press"
     // on the hint bar) went to the screen's edge, away from the rest of the page (F12 104712)
-    if (!hud && flat && !movie && !s.pillar && hppoa_Paused() && !hppoa_Inventory() && c.squeeze[1] == fw * 0.5f && r[0] < fw / 3.0f &&
-        (r[1] + r[3]) * 0.5f < fh * 0.75f && std::fabs((r[0] + r[2]) * 0.5f - fw * 0.5f) > 4.0f) {
+    // nor the "Pausing" notice the game shows as it pauses: its text strip (134 to 536 by 328 to 380, a 512x64 picture
+    // the same in every language) starts in the left third and sits 15 pixels right of the middle, so once the game
+    // counted as paused it went to the left with the column, after showing in the middle (F12 213043, 2026-11-15)
+    const bool pausing_notice = std::fabs(r[0] - 134.0f) <= 3.0f && std::fabs(r[2] - 536.0f) <= 3.0f &&
+                                std::fabs(r[1] - 328.5f) <= 3.0f && std::fabs(r[3] - 380.5f) <= 3.0f;
+    if (!hud && flat && !movie && !s.pillar && hppoa_Paused() && !hppoa_Inventory() && !pausing_notice &&
+        c.squeeze[1] == fw * 0.5f && r[0] < fw / 3.0f && (r[1] + r[3]) * 0.5f < fh * 0.75f &&
+        std::fabs((r[0] + r[2]) * 0.5f - fw * 0.5f) > 4.0f) {
         c.squeeze[1] = 0.0f;
     }
     // xboxrecomp (hppoa): and only over the scene. Saving from the pause menu draws its compass icon (x 63 to 127) on
@@ -5311,8 +5317,10 @@ bool HiddenDraw(const State& s, const Assembled& a, uint32_t gw, uint32_t gh) {
             return true;
     }
     // 2D placed off the 4:3 frame's side, not seen on the Xbox: narrowed about the middle it came into the 16:9
-    // screen's side bands (the map page's "MapText9", "MapText10", at 637 to 856, under its bottom bar: F12 135414)
-    if (app::BootAspect() == app::AspectMode::Wide && a.pretransformed && s.textures[0] && gw) {
+    // screen's side bands (the map page's "MapText9", "MapText10", at 637 to 856, under its bottom bar: F12 135414).
+    // Untextured too: the inventory's Quests page draws a black 26 x 26 square at -79.6 to -53.6 by 3.8 to 29.8,
+    // brought in to the top left corner (issue #1, F12 192858)
+    if (app::BootAspect() == app::AspectMode::Wide && a.pretransformed && gw) {
         float r[4];
         if (RegisterRect(a, 0, r) && (r[0] >= fw - 4.0f || r[2] <= 4.0f)) return true;
     }

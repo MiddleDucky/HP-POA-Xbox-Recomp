@@ -1,9 +1,10 @@
-# Harry Potter and the Prisoner of Azkaban (NTSC) — Xbox PC Recomp
+# Harry Potter and the Prisoner of Azkaban — Xbox PC Recomp
 
 A native Windows port of the original Xbox game, made by **static recompilation**: the game's own code, translated
 to run directly on a PC, with a new DirectX 12 renderer, sound and input in place of the console's.
 
-> **No game data is included.** You need the files from your own copy of the Xbox disc (North American, NTSC-U).
+> **No game data is included.** You need the files from your own copy of the Xbox disc: North American (NTSC-U) or
+> European (PAL).
 
 **[Download the latest release](https://github.com/MiddleDucky/HP-POA-Xbox-Recomp/releases/latest)**
 
@@ -17,7 +18,7 @@ to run directly on a PC, with a new DirectX 12 renderer, sound and input in plac
 - [What's new compared to the Xbox](#whats-new-compared-to-the-xbox)
 - [Fixes and improvements](#fixes-and-improvements)
 - [Enhancements](#enhancements)
-- [Options (F10)](#options-f10)
+- [PC Settings](#pc-settings)
 - [Building from source](#building-from-source)
 - [If something goes wrong](#if-something-goes-wrong)
 - [Credits and legal](#credits-and-legal)
@@ -40,19 +41,21 @@ Microsoft's Media Feature Pack.
 
 ## Installing
 
-1. Download `hppoa_v0.1.0_windows.zip` from the [releases](https://github.com/MiddleDucky/HP-POA-Xbox-Recomp/releases)
+1. Download `hppoa_v0.2.0_windows.zip` from the [releases](https://github.com/MiddleDucky/HP-POA-Xbox-Recomp/releases)
    and unpack it into a folder of your choice.
-2. Copy the game files from your disc (or your `.xiso`) into a folder named **`game`** next to the executables, so
-   that `game\default.xbe` exists:
+2. Copy the game files from your disc into a folder named **`game`** next to the executables, so that
+   `game\default.xbe` exists. Or put your **`.xiso` / `.iso`** in that folder: the launcher unpacks it the first
+   time it starts (the image is left as it is and can be deleted afterwards).
 
    ```
    your folder\
        hppoa_launcher.exe
-       hppoa.exe
        README.txt
        CHANGES.txt
        licenses\
-       shadercache\base_shaders.bin
+       bin\
+           hppoa.exe
+           shadercache\base_shaders.bin
        game\
            default.xbe
            ...the rest of the disc
@@ -61,31 +64,37 @@ Microsoft's Media Feature Pack.
 3. Start **`hppoa_launcher.exe`**. On the first run it checks every game file against the disc's (a few seconds,
    longer on a hard drive) and names any that are damaged or missing.
 
-The port creates these itself: `hppoa.toml` (your settings), `saves\` (your saved games) and more of `shadercache\`
-(the first visit to an area prepares its shaders; later visits load at once).
+The port creates these itself: `saves\` (your saved games, beside the launcher), and in `bin\` your settings
+(`hppoa.toml`), the game's log (`logs\`) and more of `shadercache\` (the first visit to an area prepares its shaders;
+later visits load at once). All the program is in `bin\` but the launcher; `game\` and `saves\` stay beside it.
 
-**Updating:** replace the port's files and keep your `hppoa.toml`, `saves\` and `shadercache\`.
+**Updating:** unpack the new zip over your folder and keep `game\`, `saves\` and `bin\`. **Coming from v0.1.0**
+(everything beside the launcher): the launcher moves your `hppoa.toml`, shader cache and file check into `bin\` the
+first time it starts and removes the old `hppoa.exe`; your saves stay where they are.
 
 ## Playing
 
 The launcher sets 4:3 or 16:9 and the graphics, sound and control settings; **Play** starts the game. Everything it
-sets can be changed in the game with **F10**.
+sets can be changed in the game under **PC Settings**: press **Y** on the main menu or the pause menu (the right
+mouse button on the keyboard). With the PAL disc the launcher's **Language** picks English, French, German, Spanish
+or Italian.
 
 | Key | |
 |---|---|
-| **F10** | Options |
+| **Y** on the main / pause menu | PC Settings |
+| **F10** | The full options panel: PC Settings plus key bindings and button remapping |
 | **Alt+Enter** | Windowed / borderless |
 | **Alt+F4** | Quit |
 
 **Controller:** an Xbox 360 / One / Series controller plays like the original pad. The original White and Black
-buttons are **LB** and **RB**. Pressing **both sticks in (L3 + R3)** opens and closes the options.
+buttons are **LB** and **RB**. Pressing **both sticks in (L3 + R3)** opens and closes the F10 panel.
 
 **Keyboard and mouse** (defaults; every key can be changed under F10 > Controls):
 
 | Action | Key |
 |---|---|
 | Move | W A S D |
-| Camera | Mouse, or the arrow keys |
+| Camera | Mouse, or the arrow keys (in the menus the arrows move through them) |
 | A / B | Space / E |
 | X / Y | Left / right mouse button |
 | Black / White | R / Q |
@@ -100,8 +109,9 @@ buttons are **LB** and **RB**. Pressing **both sticks in (L3 + R3)** opens and c
 
 ### Picture
 - **Any resolution**, windowed, borderless or fullscreen.
-- **True 16:9**: the game draws the whole wider picture instead of stretching the 4:3 one. The HUD moves to the
-  screen's edges, and the HUD's map and the inventory's map widen with it. 4:3 is still available.
+- **True 16:9**: the game draws the whole wider picture instead of stretching the 4:3 one: more at the sides, with
+  the same height and character size as 4:3. The HUD moves to the screen's edges, and the HUD's map and the
+  inventory's map widen with it. 4:3 is still available.
 - **60 fps** (or the game's own 30).
 - **MSAA, SMAA and anisotropic filtering.**
 - **Post-processing**, all neutral by default so the picture starts as the console's: the game's bloom strength,
@@ -119,6 +129,10 @@ buttons are **LB** and **RB**. Pressing **both sticks in (L3 + R3)** opens and c
   They switch as soon as you pick up the other device, and follow your bindings.
 
 ### Also
+- **PC Settings** in the game's own menus (Y on the main menu or the pause menu): every option, with the
+  controller or the keyboard.
+- **Both editions**: the North American (NTSC-U) and European (PAL) discs, with the PAL disc's five languages.
+- **Disc images**: an `.xiso` / `.iso` in the game folder is unpacked by the launcher.
 - **Quit To Desktop** on the main menu and the pause menu, with a Yes / No box.
 - **A launcher** to choose the picture, sound and control settings before playing, and to check the game files
   against the disc's.
@@ -154,6 +168,12 @@ Problems in the game, or ones that 60 fps, 16:9 and a PC brought out, put right.
 - **The Glacius lever** no longer turns black before it lights up: its front fades to the lit lever's colour.
 
 **16:9**
+- **The camera no longer zooms in.** The game's camera angle is its horizontal one, so 16:9 kept the 4:3 width and
+  cut the height; it now keeps the 4:3 height and shows more at the sides, with the culling widened to match.
+- **Cutscenes without black bars** show the console's cutscene picture, framed as between the bars in 4:3,
+  filling the screen.
+- **The animated portraits** (the Fat Lady, the knight) keep their 4:3 proportions instead of looking squeezed.
+- **No black square** in the corner of the inventory's Quests page, and **"Pausing"** stays in the middle.
 - **The HUD's map**: the map and Harry's arrow sit inside their panel.
 - **The inventory's map**: wider, with the room names, dots and Harry's mark in their places.
 - **Action prompts** (Open, Dodge) stay under the A button, and button icons in a line of text stay in their gap.
@@ -165,35 +185,42 @@ Problems in the game, or ones that 60 fps, 16:9 and a PC brought out, put right.
 
 **Menus**
 - **"Quit To Desktop"** no longer stays on screen over the attract movie the main menu plays when left idle.
+- **"Exit to Desktop"** closes the game straight away instead of freezing on its last picture.
 
 ## Enhancements
 
-Changes to how the game plays, each with its own switch under **F10 > Enhancements**.
+Changes to how the game plays, each with its own switch under **PC Settings > Enhancements**.
 
 | Enhancement | Default | What it does |
 |---|---|---|
 | **Button prompts** | Automatic | Key icons while you play with keyboard and mouse, Xbox buttons with a controller. Can be fixed to either. |
 | **Show each tutorial once** | On | A tutorial popup you have already seen doesn't come back. |
-| **Responsive movement** | On | Harry turns to the stick twice as quickly, sets off the moment the stick moves (no shuffle or turn-on-the-spot wait), and keeps his running speed through turns. Off: as on the console. |
+| **Responsive movement** | On | Harry turns to the stick about twice as quickly, sets off the moment the stick moves (no shuffle or turn-on-the-spot wait), and keeps his running speed through turns. Carrying always plays as on the console. Off: as on the console. |
 | **Smooth stretched textures** | On | Skies and the landscapes behind the levels without blocky pixels. |
 | **Hide the saving / loading compass** | On | The turning compass in the top left corner while the game saves or loads isn't drawn. |
 | **Leave out "time to turn in" lines** | Off | Harry, Ron and Hermione's "time to turn in" / "we need to go" reminders, and Neville's "can we go back now", left out. |
 | **Cutscenes without black bars** | Off | In 16:9, cutscenes fill the screen instead of keeping their letterbox. |
+| **Skip logo movies** | Off | The EA and Warner Bros. logos at start aren't played. |
 
 Always on: **L3 + R3** opens the options on a controller, and menus that turn the game world off show black
 behind them instead of the game's grey-blue.
 
-## Options (F10)
+## PC Settings
 
-| Tab | |
+**Y** on the main menu or the pause menu (the right mouse button on the keyboard). Up / down choose a row, left /
+right or A change it, B goes back a level; B on the list or Start closes. Changes are saved as you make them.
+
+| Page | |
 |---|---|
-| **Graphics** | Aspect ratio, display mode, vsync, 30 / 60 fps, resolution, MSAA, SMAA, anisotropic filtering, brightness, contrast, FPS counter, post-processing, field of view |
+| **Display** | Aspect ratio, display mode, resolution, vsync, 30 / 60 fps |
+| **Graphics** | Field of view, internal resolution, render scale, MSAA, SMAA, anisotropic filtering, brightness, contrast, FPS counter |
+| **Post-processing** | Bloom, sharpening, saturation, vibrance, warmth, vignette, film grain |
 | **Audio** | Stereo or 5.1 speakers |
-| **Controls** | Key bindings, mouse sensitivity, deadzones and sensitivity, camera inversion, vibration |
+| **Controls** | Keyboard and mouse, mouse sensitivity, camera keys in menus, deadzones and sensitivity, camera inversion, vibration |
 | **Accessibility** | Colour-blind correction filters |
 | **Enhancements** | See [above](#enhancements) |
 
-"Defaults (this page)" resets the open tab.
+**F10** opens the same options as a panel, plus key bindings and button remapping. "Defaults (this page)" resets the open tab.
 
 ## Building from source
 
@@ -204,7 +231,7 @@ The repository holds the port's own code, the renderer, the launcher and the
 **You need:**
 - Linux (or WSL) with the **MinGW-w64** cross compiler (`x86_64-w64-mingw32-gcc`), **CMake 3.20+** and
   **Python 3** with **capstone** (`pip install capstone`).
-- Your own NTSC-U disc's files.
+- Your own NTSC-U or PAL disc's files.
 
 **1. Put the game files in `game/`** at the repository's root, so that `game/default.xbe` exists.
 
@@ -219,16 +246,18 @@ cd port
 cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=../cmake/mingw-w64-x86_64.cmake -DCMAKE_BUILD_TYPE=Release -DHPPOA_RELEASE=ON
 cmake --build build -j"$(nproc)" --target hppoa hppoa_launcher
 ```
-`hppoa.exe` and `hppoa_launcher.exe` are in `port/build/`. To run them, put them in a folder with a `game` folder
-as in [Installing](#installing). `tools/package_release.sh` (from `port/`) builds and packages the same zip the
+`hppoa.exe` and `hppoa_launcher.exe` are in `port/build/`. To run them, put the launcher in a folder with a
+`game` folder and `hppoa.exe` in its `bin` folder, as in [Installing](#installing) (with `hppoa.exe` beside the
+launcher instead, everything stays in that one folder). `tools/package_release.sh` (from `port/`) builds and packages the same zip the
 releases carry.
 
-Leave out `-DHPPOA_RELEASE=ON` for a development build: F6 opens the trainer and F12 captures a frame for debugging.
+Leave out `-DHPPOA_RELEASE=ON` for a development build: F12 captures a frame for debugging. Add
+`-DHPPOA_TRAINER=ON` to a development build for the F6 trainer (never in a release).
 `port/PORT_CHANGES.md` lists every change the port makes to the game, where it lives and how to switch it off.
 
 ## If something goes wrong
 
-The launcher keeps the game's log in **`hppoa_run.log`** beside the executables; a crash writes its report there
+The launcher keeps the game's log in **`bin\logs\hppoa_run.log`**; a crash writes its report there
 too. Please attach it to an [issue](https://github.com/MiddleDucky/HP-POA-Xbox-Recomp/issues), with what you were
 doing.
 
