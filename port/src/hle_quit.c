@@ -238,7 +238,14 @@ int hppoa_GameScreen(void)
 
 /* d3d12.cpp: a cutscene's screens ("widescreen", and "pre_ig" as it ends): the game's text there (subtitles) stays
  * about the middle, only the HUD's pictures go to the sides (2026-11-10) */
-int hppoa_CutsceneScreen(void) { return !strcmp(g_screen, "widescreen") || !strcmp(g_screen, "pre_ig"); }
+/* a cutscene straight out of a level load runs on the loading's "transition" screen with the bars up (night 3,
+ * F12 124936 to 124958, 2026-11-16): its short subtitles went right with the HUD. g_cut_bars: the HUD's Widescreen_Box */
+static int g_cut_bars;
+int hppoa_CutsceneScreen(void)
+{
+    return !strcmp(g_screen, "widescreen") || !strcmp(g_screen, "pre_ig") ||
+           (g_cut_bars && !strcmp(g_screen, "transition"));
+}
 
 /* d3d12.cpp: the inventory (its own screen; it pauses the game too): its 2D stays narrowed about the middle, not
  * moved to the screen's left as the pause menu's column is */
@@ -580,6 +587,11 @@ void sub_001AD3B0(void)
             char v[32];
             guest_str(MEM32(g_esp + 8), v, sizeof v);
             g_map_page = !_stricmp(v, "POA_IG_MAPS.swf");
+        }
+        if (!strcmp(name, "Widescreen_Box")) {  /* the cutscene bars, set each frame (hppoa_CutsceneScreen) */
+            char v[8];
+            guest_str(MEM32(g_esp + 8), v, sizeof v);
+            g_cut_bars = !strcmp(v, "true");
         }
     }
     if (MEM32(g_esp + 4) == 0x2C9850u && MEM32(g_esp + 8)) {  /* "MiniGame_Type" */

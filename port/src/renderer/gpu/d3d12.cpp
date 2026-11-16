@@ -4539,7 +4539,7 @@ extern "C" int hppoa_Paused(void);  // hle_quit.c: the pause menu (or a menu ope
 extern "C" int hppoa_Inventory(void);  // hle_quit.c: the inventory is up
 extern "C" int hppoa_HideSaveIcon(void);  // app.cpp: F10 Enhancements > Hide the saving / loading compass
 extern "C" int hppoa_MapScreen(void);  // hle_quit.c: the inventory's map page is up
-extern "C" int hppoa_CutsceneScreen(void);  // hle_quit.c: "widescreen" or "pre_ig"
+extern "C" int hppoa_CutsceneScreen(void);  // hle_quit.c: "widescreen", "pre_ig", or "transition" with the bars up
 extern "C" int hppoa_GameScreen(void);  // hle_quit.c: the menus on "ig", paused or not (pausing's first frames)
 extern "C" int hppoa_LegalScreen(void);  // hle_quit.c: the legal notices at start
 extern "C" int hppoa_LoadingScreen(void);  // hle_video.c: the loading screen's thread is drawing
