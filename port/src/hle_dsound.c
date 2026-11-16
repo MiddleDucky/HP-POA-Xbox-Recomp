@@ -1197,6 +1197,129 @@ void sub_001B2D50(void)
     sub_001B2D50_gen();
 }
 
+/* Reparo's sound, part 2. The spell's sound goes through the stream / sentence path, whose sources read a sample's
+ * format from its bank header (sub_00161E60, thiscall: 1-based sample index; the bank is handle +0x10, its address at
+ * [[0x383DAC] + handle * 8]). That path knows codecs 1, 5, 8, 10 (EA-XA) and 15, not 0x14 (Xbox ADPCM), and says
+ * "SOUND - Trying to stream or sentence an incompatible format". Glacius's two samples are the level banks' only
+ * EA-XA ones; reparo.sdt's two are Xbox ADPCM like every other sound, so Reparo was silent with its own category.
+ * When one of Reparo's (by sample count, 57428 or 21460 at 22050 Hz) is asked for, it is decoded and written back in
+ * place as EA-XA (smaller: 15 bytes per 28 samples against 36 per 64), and its header says codec 10 and tag 0x8C 4,
+ * as Glacius's do. Each level's bank is converted once, at its first use. */
+static const int16_t k_ima_step[89] = {
+    7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107,
+    118, 130, 143, 157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963,
+    1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358, 5894,
+    6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794,
+    32767};
+static const int8_t k_ima_index[16] = {-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8};
+static const int k_eaxa_coef[4][2] = {{0, 0}, {240, 0}, {460, -208}, {392, -220}};
+
+static int clamp16(int v) { return v < -32768 ? -32768 : v > 32767 ? 32767 : v; }
+
+/* Xbox ADPCM, mono: 36-byte blocks of 64 samples, the header's sample first, then 63 of its 64 nibbles (low first) */
+static void xadpcm_decode(uint32_t src, uint32_t ns, int16_t *out)
+{
+    for (uint32_t b = 0, n = 0; n < ns; b++) {
+        uint32_t blk = src + b * 36;
+        int hist = (int16_t)MEM16(blk), idx = MEM8(blk + 2);
+        if (idx > 88) idx = 88;
+        out[n++] = (int16_t)hist;
+        for (int i = 0; i < 63 && n < ns; i++) {
+            int nib = (MEM8(blk + 4 + i / 2) >> ((i & 1) * 4)) & 15, step = k_ima_step[idx];
+            int diff = step >> 3;
+            if (nib & 4) diff += step;
+            if (nib & 2) diff += step >> 1;
+            if (nib & 1) diff += step >> 2;
+            hist = clamp16(nib & 8 ? hist - diff : hist + diff);
+            idx += k_ima_index[nib];
+            idx = idx < 0 ? 0 : idx > 88 ? 88 : idx;
+            out[n++] = (int16_t)hist;
+        }
+    }
+}
+
+/* EA-XA as the game decodes it (checked on glacius.sdt): a byte (filter << 4 | shift), then 28 nibbles high first,
+ * v = (nibble << 12 >> shift) + (c1 * h1 + c2 * h2 + 128 >> 8). Each frame takes the filter and shift that err least. */
+static void eaxa_encode(const int16_t *pcm, uint32_t ns, uint32_t dst)
+{
+    int h1 = 0, h2 = 0;
+    for (uint32_t f = 0; f * 28 < ns; f++) {
+        int x[28];
+        for (int i = 0; i < 28; i++) x[i] = f * 28 + i < ns ? pcm[f * 28 + i] : 0;
+        int best_f = 0, best_k = 0;
+        int64_t best = INT64_MAX;
+        for (int fl = 0; fl < 4; fl++)
+            for (int k = 0; k <= 12; k++) {
+                int a = h1, b = h2, step = 4096 >> k;
+                int64_t err = 0;
+                for (int i = 0; i < 28 && err < best; i++) {
+                    int pred = (k_eaxa_coef[fl][0] * a + k_eaxa_coef[fl][1] * b + 128) >> 8, r = x[i] - pred;
+                    int n = (r >= 0 ? r + step / 2 : r - step / 2) / step;
+                    n = n < -8 ? -8 : n > 7 ? 7 : n;
+                    int v = clamp16(n * step + pred);
+                    err += (int64_t)(v - x[i]) * (v - x[i]);
+                    b = a, a = v;
+                }
+                if (err < best) best = err, best_f = fl, best_k = k;
+            }
+        uint32_t out = dst + f * 15;
+        MEM8(out) = (uint8_t)(best_f << 4 | best_k);
+        int step = 4096 >> best_k;
+        for (int i = 0; i < 28; i++) {
+            int pred = (k_eaxa_coef[best_f][0] * h1 + k_eaxa_coef[best_f][1] * h2 + 128) >> 8, r = x[i] - pred;
+            int n = (r >= 0 ? r + step / 2 : r - step / 2) / step;
+            n = n < -8 ? -8 : n > 7 ? 7 : n;
+            int v = clamp16(n * step + pred);
+            h2 = h1, h1 = v;
+            uint32_t at = out + 1 + i / 2;
+            MEM8(at) = (uint8_t)(i & 1 ? (MEM8(at) & 0xF0) | (n & 15) : (n & 15) << 4);
+        }
+    }
+}
+
+static void reparo_to_eaxa(uint32_t bank, uint32_t index)
+{
+    if (!bank || index >= MEM16(bank + 6)) return;
+    uint32_t slot = bank + 0x14 + index * 4, rel = MEM32(slot);
+    if (!rel) return;
+    uint32_t pt = slot + rel, q = pt + 4, codec_at = 0, size_at = 0, ns = 0, off = 0, rate = 0;
+    for (int guard = 0; guard < 64; guard++) {
+        uint8_t t = MEM8(q++);
+        if (t == 0xFF) break;
+        if (t >= 0xFC) continue;
+        uint8_t len = MEM8(q++);
+        uint32_t v = 0;
+        for (uint8_t i = 0; i < len; i++) v = v << 8 | MEM8(q + i);
+        if (t == 0xA0) {
+            if (v != 0x14 || len != 1) return; /* already EA-XA, or not Xbox ADPCM */
+            codec_at = q;
+        }
+        if (t == 0x8C && len == 2) size_at = q;
+        if (t == 0x85) ns = v;
+        if (t == 0x88) off = v;
+        if (t == 0x84) rate = v;
+        q += len;
+    }
+    if (!codec_at || !size_at || rate != 22050 || (ns != 57428 && ns != 21460)) return;
+    int16_t *pcm = (int16_t *)malloc(ns * sizeof(int16_t));
+    if (!pcm) return;
+    xadpcm_decode(bank + off, ns, pcm);
+    eaxa_encode(pcm, ns, bank + off);
+    free(pcm);
+    MEM8(codec_at) = 0x0A;
+    MEM8(size_at) = 0, MEM8(size_at + 1) = 4;
+    fprintf(stderr, "[SPELLSND] %u ms Reparo sample %u (%u samples) made EA-XA for the stream path\n",
+            (unsigned)GetTickCount(), index, ns);
+}
+
+extern void sub_00161E60_gen(void);
+void sub_00161E60(void)
+{
+    uint32_t index = MEM32(g_esp + 4), handle = MEM32(g_ecx + 0x10), table = MEM32(0x383DAC);
+    if (index && table) reparo_to_eaxa(MEM32(table + handle * 8), index - 1);
+    sub_00161E60_gen();
+}
+
 /* The title's "SOUND - Trying to stream or sentence an incompatible format" repeats every frame in some levels
  * (dementorsbattle, patronuschallenge, hex_spring_d_ctc_hd, shriekingshacktunnel). sub_001624A0 (thiscall: source,
  * stream index, out) reads a stream's format bits from its source through vfunc +0xC: rate, channels and sample type
