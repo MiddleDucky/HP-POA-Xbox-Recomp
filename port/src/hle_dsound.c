@@ -1277,12 +1277,13 @@ static void eaxa_encode(const int16_t *pcm, uint32_t ns, uint32_t dst)
     }
 }
 
-static void reparo_to_eaxa(uint32_t bank, uint32_t index)
+/* 1 if bank sample `index` is one of reparo.sdt's (either codec); with `convert`, an Xbox ADPCM one becomes EA-XA */
+static int reparo_sample(uint32_t bank, uint32_t index, int convert)
 {
-    if (!bank || index >= MEM16(bank + 6)) return;
+    if (index >= MEM16(bank + 6)) return 0;
     uint32_t slot = bank + 0x14 + index * 4, rel = MEM32(slot);
-    if (!rel) return;
-    uint32_t pt = slot + rel, q = pt + 4, codec_at = 0, size_at = 0, ns = 0, off = 0, rate = 0;
+    if (!rel) return 0;
+    uint32_t q = slot + rel + 4, codec = 0, codec_at = 0, size_at = 0, ns = 0, off = 0, rate = 0;
     for (int guard = 0; guard < 64; guard++) {
         uint8_t t = MEM8(q++);
         if (t == 0xFF) break;
@@ -1290,19 +1291,18 @@ static void reparo_to_eaxa(uint32_t bank, uint32_t index)
         uint8_t len = MEM8(q++);
         uint32_t v = 0;
         for (uint8_t i = 0; i < len; i++) v = v << 8 | MEM8(q + i);
-        if (t == 0xA0) {
-            if (v != 0x14 || len != 1) return; /* already EA-XA, or not Xbox ADPCM */
-            codec_at = q;
-        }
+        if (t == 0xA0 && len == 1) codec = v, codec_at = q;
         if (t == 0x8C && len == 2) size_at = q;
         if (t == 0x85) ns = v;
         if (t == 0x88) off = v;
         if (t == 0x84) rate = v;
         q += len;
     }
-    if (!codec_at || !size_at || rate != 22050 || (ns != 57428 && ns != 21460)) return;
+    if (!codec_at || !size_at || rate != 22050 || (ns != 57428 && ns != 21460) || (codec != 0x14 && codec != 0x0A))
+        return 0;
+    if (!convert || codec == 0x0A) return 1;
     int16_t *pcm = (int16_t *)malloc(ns * sizeof(int16_t));
-    if (!pcm) return;
+    if (!pcm) return 1;
     xadpcm_decode(bank + off, ns, pcm);
     eaxa_encode(pcm, ns, bank + off);
     free(pcm);
@@ -1310,13 +1310,20 @@ static void reparo_to_eaxa(uint32_t bank, uint32_t index)
     MEM8(size_at) = 0, MEM8(size_at + 1) = 4;
     fprintf(stderr, "[SPELLSND] %u ms Reparo sample %u (%u samples) made EA-XA for the stream path\n",
             (unsigned)GetTickCount(), index, ns);
+    return 1;
 }
 
+/* The spell's sound is a sequence: its first sample, then its second (Glacius: 1.32 s, then the 2.52 s one that
+ * loops; Reparo: 0.97 s, then 2.6 s). The stream checks the format of the first only and reads the next as the same,
+ * so when one of Reparo's is asked for, every Reparo sample in the bank is converted; the second left as Xbox ADPCM
+ * played as crackle, without the loop (2026-11-16). */
 extern void sub_00161E60_gen(void);
 void sub_00161E60(void)
 {
     uint32_t index = MEM32(g_esp + 4), handle = MEM32(g_ecx + 0x10), table = MEM32(0x383DAC);
-    if (index && table) reparo_to_eaxa(MEM32(table + handle * 8), index - 1);
+    uint32_t bank = index && table ? MEM32(table + handle * 8) : 0;
+    if (bank && reparo_sample(bank, index - 1, 0))
+        for (uint32_t i = 0, n = MEM16(bank + 6); i < n; i++) reparo_sample(bank, i, 1);
     sub_00161E60_gen();
 }
 
