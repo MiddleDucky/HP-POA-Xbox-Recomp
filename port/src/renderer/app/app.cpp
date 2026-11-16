@@ -95,6 +95,8 @@ const Entry kEntries[] = {
      "the buttons named in the game's text: 0 automatic (the device played with last), 1 controller, 2 keyboard and mouse (the key bindings' names); read at start"},
     {"tutorials_once", nullptr, Kind::Bool, FIELD(tutorials_once), 0, 0,
      "each tutorial popup shown once (the ones seen are kept in tutorials_seen.txt); false: every time, as the game"},
+    {"reparo_sound", nullptr, Kind::Bool, FIELD(reparo_sound), 0, 0,
+     "Reparo casts with its own sound (reparo.sdt); false: Glacius's, as the Xbox and GameCube games; takes a restart"},
     {"turn_full_speed", nullptr, Kind::Bool, FIELD(turn_full_speed), 0, 0,
      "running keeps its full speed while turning (the Xbox slows it); false: as the game"},
     {"instant_step", "RECOMP_INSTANT_STEP", Kind::Bool, FIELD(instant_step), 0, 0,
@@ -515,6 +517,7 @@ extern "C" int app_Speakers(void) { return app::Get().speakers == 6 ? 6 : 2; }
 // hle_quit.c / hle_debug.c: F10 Enhancements, read each time (F10 changes them in play)
 extern "C" int hppoa_TutorialsOnce(void) { return app::Get().tutorials_once; }
 extern "C" int hppoa_QuietTurnIn(void) { return app::Get().quiet_turn_in; }
+extern "C" int hppoa_ReparoSound(void) { return app::Get().reparo_sound; }  // hle_dsound.c, at the spells' setup
 extern "C" int hppoa_HideSaveIcon(void) { return app::Get().hide_save_icon; }
 extern "C" int hppoa_CutsceneBarsHidden(void) { return app::Get().cutscene_bars_hidden; }
 extern "C" int hppoa_SkipIntro(void) { return app::Get().skip_intro; }  // hle_video.c, the script's PlayMovie

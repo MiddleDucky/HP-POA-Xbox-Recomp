@@ -379,6 +379,7 @@ static void ResetPage(Settings& s, const char* page) {
         std::memcpy(&s.button_prompts, &d.button_prompts, sizeof(s.button_prompts));
         std::memcpy(&s.tutorials_once, &d.tutorials_once, sizeof(s.tutorials_once));
         std::memcpy(&s.quiet_turn_in, &d.quiet_turn_in, sizeof(s.quiet_turn_in));
+        std::memcpy(&s.reparo_sound, &d.reparo_sound, sizeof(s.reparo_sound));
         std::memcpy(&s.smooth_textures, &d.smooth_textures, sizeof(s.smooth_textures));
         std::memcpy(&s.hide_save_icon, &d.hide_save_icon, sizeof(s.hide_save_icon));
         std::memcpy(&s.cutscene_bars_hidden, &d.cutscene_bars_hidden, sizeof(s.cutscene_bars_hidden));
@@ -609,6 +610,9 @@ void DrawPanel(bool start) {
         ImGui::TextDisabled("Harry, Ron and Hermione stop saying they're tired, have nothing to do, \"We need to go\",");
         ImGui::TextDisabled("\"Can we go now?\", and Neville stops asking to go back to bed. Their hints stay: the way");
         ImGui::TextDisabled("to go, the wrong floor, Girding Potion and Fred and George.");
+        if (ImGui::Checkbox("Reparo's own sound", &s.reparo_sound)) Changed();
+        ImGui::TextDisabled("The Xbox game casts Reparo with Glacius's sound; this plays Reparo's own, which is on the");
+        ImGui::TextDisabled("disc unused. Takes a restart. Off: as on the console.");
         Row("Controls");
         {
             // one switch for the three (2026-11-10): on, turning twice as quick, the instant first step and full
@@ -1023,6 +1027,8 @@ const GameRow kEnhanceRows[] = {
      [](Settings& s, int) { s.tutorials_once = !s.tutorials_once; }},
     {"\"Time to turn in\" lines", [](const Settings& s) { return std::string(s.quiet_turn_in ? "Left out" : "Kept"); },
      [](Settings& s, int) { s.quiet_turn_in = !s.quiet_turn_in; }},
+    {"Reparo's own sound", [](const Settings& s) { return OnOff(s.reparo_sound); },
+     [](Settings& s, int) { s.reparo_sound = !s.reparo_sound; }},
     // one switch for the three, as F10's (on: turning twice as quick, the instant first step, full speed in turns)
     {"Responsive movement",
      [](const Settings& s) { return OnOff(s.turn_response > 100 || s.instant_step || s.turn_full_speed); },

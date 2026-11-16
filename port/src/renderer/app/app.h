@@ -56,6 +56,7 @@ struct Settings {
     bool cutscene_bars_hidden = false; // 16:9 cutscenes without their letterbox bars (hle_widescreen.c, d3d12.cpp)
     bool smooth_textures = true;       // stretched textures (skies, landscapes) filtered bicubic (d3d12.cpp, kTexSmooth)
     bool quiet_turn_in = false;        // the trio's / Neville's "time to turn in" lines left out (hle_debug.c)
+    bool reparo_sound = false;         // Reparo casts with its own sound, not Glacius's (hle_dsound.c, issue #10)
     // xboxrecomp: post-processing (d3d12.cpp): the game's own bloom's strength, sharpening and grading over the
     // finished frame. Neutral by default: the console's picture
     uint32_t game_bloom = 100;         // the game's bloom, % of the console's: 0 off to 200
