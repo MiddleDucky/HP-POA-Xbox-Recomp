@@ -77,7 +77,6 @@ const Opt kOpts[] = {
     {"Game", "tutorials_once", "Show each tutorial once", kCheck, 1, 0, 0, nullptr, nullptr, nullptr},
     {"Game", "quiet_turn_in", "Leave out \"time to turn in\" and \"we need to go\" lines", kCheck, 0, 0, 0, nullptr,
      nullptr, nullptr},
-    {"Game", "reparo_sound", "Reparo's own sound (not Glacius's)", kCheck, 0, 0, 0, nullptr, nullptr, nullptr},
     // one box (by request, 2026-11-15: the turn speed slider and the two boxes beside it were Responsive movement's
     // insides); its values are the game's hppoa_turn_tunes.h
     {"Game", "turn_response", "Responsive movement", kResponsive, 1, 0, 0, nullptr, nullptr,

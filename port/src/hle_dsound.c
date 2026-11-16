@@ -1175,14 +1175,13 @@ SFX_HOOK(00162670, "prepare", 3)
 SFX_HOOK(001629B0, "play A", 1)
 SFX_HOOK(00162C10, "play B", 1)
 
-/* F10 Enhancements > Reparo's own sound (issue #10, 2026-11-16). system_spellmanager.hpb's SetUpSpells adds each spell
+/* Reparo's own sound, always (issue #10, 2026-11-16; no option, by request). system_spellmanager.hpb's SetUpSpells adds each spell
  * through script native module 0x17 function 0; sub_001B2D50 is the VM's native call (thiscall, args: function, module,
  * frame, 0, VM). The frame's slots are boxed values (an int's value at +4): slot 0 the spell id, slot 6 the spell's
  * sound category. The disc gives Reparo (id 1) category 126, eAudioCategory_Glacius, Glacius's (id 5) own, so Reparo
  * casts with glacius.sdt's sounds on Xbox and GameCube. Category 216, eAudioCategory_Reparo_Spell, is the one
  * system_audiomanagerstartup.hpb registers to the 'reparo' sounds (reparo.sdt). pop_int boxes each value anew, so
  * changing the slot's box leaves Glacius's constant alone. [SPELLSND] is logged at each Reparo setup. */
-int hppoa_ReparoSound(void); /* app.cpp */
 extern void sub_001B2D50_gen(void);
 void sub_001B2D50(void)
 {
@@ -1190,10 +1189,9 @@ void sub_001B2D50(void)
     if (module == 0x17 && func == 0 && frame) {
         uint32_t id = MEM32(frame), cat = MEM32(frame + 6 * 4);
         if (id && cat && MEM32(id + 4) == 1 && MEM32(cat + 4) == 126) {
-            int on = hppoa_ReparoSound();
-            if (on) MEM32(cat + 4) = 216;
-            fprintf(stderr, "[SPELLSND] %u ms Reparo set up with sound category %u (%s)\n", (unsigned)GetTickCount(),
-                    on ? 216u : 126u, on ? "its own, F10 Enhancements" : "Glacius's, as the game");
+            MEM32(cat + 4) = 216;
+            fprintf(stderr, "[SPELLSND] %u ms Reparo set up with its own sound category 216 (the disc's 126 is Glacius's)\n",
+                    (unsigned)GetTickCount());
         }
     }
     sub_001B2D50_gen();
