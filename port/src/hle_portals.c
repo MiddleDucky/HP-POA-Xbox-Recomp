@@ -192,3 +192,36 @@ void sub_0003A260(void)
     g_eax = 0;
     g_esp += 12;  /* ret 8 */
 }
+
+/* An animation cache record's destructor (sub_0012F4C0, thiscall, plain ret): the 0x20-byte record (refcount at +0,
+ * key, made by sub_0012FE60, filled by the loader sub_0012F500) frees its three buffers at +0x14, +0x18 and +0x1C.
+ * Issue #14 (v0.1.0, once in 3 hours, after the witch statue cutscene n3histmg2_04 as the Hogsmeade loading screen
+ * came up): the cache released record 0x81C97388 (sub_00126910 -> sub_001302D0 -> sub_0012F7D0) and its +0x1C read
+ * 0xB33BBD2E, the float cosf(pi/2) = -4.37e-8: a rotation matrix's element written over it, so the game's free
+ * (sub_001A6A50) read outside the Xbox's memory and crashed. A buffer outside the Xbox's memory (or not 4-byte aligned)
+ * is left alone here (that buffer leaks, nothing else changes) and logs [STALE] with the record, so the next report
+ * says which record was hit; the writer is still to be found. */
+extern void sub_0012F4C0_gen(void);
+void sub_0012F4C0(void)
+{
+    uint32_t rec = g_ecx, ret = MEM32(g_esp);
+    if (guest_ram(rec)) {
+        for (uint32_t off = 0x14; off <= 0x1C; off += 4) {
+            uint32_t p = MEM32(rec + off);
+            if (!p || (guest_ram(p) && !(p & 3))) continue;
+            static int lines;
+            if (lines++ < 40) {
+                float f;
+                memcpy(&f, &p, 4);
+                fprintf(stderr, "[STALE] anim cache record %08X from %08X: buffer +%02X = %08X (float %g) is not in the "
+                        "Xbox's memory, left unfreed; record: refs %u key %08X %08X %08X %08X bufs %08X %08X %08X, "
+                        "game time %u ms\n", rec, ret, off, p, (double)f, MEM32(rec), MEM32(rec + 4), MEM32(rec + 8),
+                        MEM32(rec + 0xC), MEM32(rec + 0x10), MEM32(rec + 0x14), MEM32(rec + 0x18), MEM32(rec + 0x1C),
+                        MEM32(0x0038BA6Cu + 4));
+                fflush(stderr);
+            }
+            MEM32(rec + off) = 0;
+        }
+    }
+    sub_0012F4C0_gen();
+}
