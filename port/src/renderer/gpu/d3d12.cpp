@@ -4823,10 +4823,16 @@ void SqueezeCos(const State& s, const Assembled& a, const DrawShaders& sh, uint3
         // a cutscene's subtitle (the game's text, rendered to a P8 texture) stays about the middle: a short line's box
         // (254.5 to 539.5) starts in the middle third and ends in the right third, and went to the right side with the
         // HUD once cutscenes counted as the game's screen; a long line crosses the middle and stayed (F12 005645,
-        // 2026-11-10). In play the action prompts (text too) keep their side
-        if (hppoa_CutsceneScreen()) {
-            TextureDesc d;
-            if (s.textures[0] && Describe(s.textures[0], d) && d.format == 0x0B) return;
+        // 2026-11-10). In play the action prompts (text too) keep their side.
+        // Lines spoken in play (on "ig", no cutscene) are the same subtitle: a 512x256 picture whose box ends at
+        // 539.5 by 437.5 (one line from 398.5, two from 385.5), and short ones went right with the HUD there too
+        // (2026-11-16). The prompt under the A button ("Dodge") is a 512x64 picture to 548; the tutorial text a
+        // 512x256 one in the middle (130 to 483 by 315 to 458), which keeps its block for the button icons in it
+        TextureDesc d;
+        if (s.textures[0] && Describe(s.textures[0], d) && d.format == 0x0B) {
+            if (hppoa_CutsceneScreen()) return;
+            if (d.width == 512 && d.height == 256 && std::fabs(r[2] - 539.5f) <= 1.0f && std::fabs(r[3] - 437.5f) <= 1.0f)
+                return;
         }
         const bool centred = std::fabs((r[0] + r[2]) * 0.5f - fw * 0.5f) <= 16.0f;
         const bool in_block = block_frame == frame && r[0] >= block[0] && r[2] <= block[2] && r[1] >= block[1] &&
