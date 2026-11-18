@@ -252,13 +252,7 @@ static void sneak_diff(const char *name, uint32_t self)
     if (any && ++g_sneak_lines <= 400) fprintf(stderr, "%s\n", line);
 }
 
-/* 60 fps: the wall sneak at the console's 30. At 60 fps Harry can stop part way along a ledge and push neither way, with
- * a stutter at the spot's edges; at 30 fps (and on the console) he never does. The sneak's idle and move states
- * (sub_000FFA80, sub_000FFFE0) run each frame the player's character is on a wall: while they do, frames are paced to
- * two vblanks (hle_d3d8.cpp's Pace) and the game clock takes the title's own 33 ms minimum step (hle_clock.c), so the
- * sneak runs exactly as on the console. Only in the Carpe Retractum challenge (the level folder at 0x30FB44, the
- * title's own "...\\level\\carperetractum_cpe\\", built into each package path by sub_000519C0), where Harry got
- * stuck; every other wall sneak stays at 60. RECOMP_SNEAK_30=0 keeps 60 fps there too. */
+/* the player's character last ran a wall sneak state (sneak_note): the Carpe ledge's bend step below */
 static DWORD g_sneak_seen;
 
 /* the level loaded is the Carpe Retractum challenge: its folder name in the level path at 0x30FB44 */
@@ -275,27 +269,87 @@ static int in_carpe_retractum(void)
     }
     return 0;
 }
+/* the player's character is wall sneaking: called from the sneak states with the character. Notes when, the character
+ * and its position component, for the ledge step below. */
+static volatile uint32_t g_player, g_player_comp;
 static void sneak_note(uint32_t self)
 {
     uint32_t table = MEM32(0x3660C8);
     if (!table) return;
     uint32_t h = MEM16(table + 0xE6);  /* player 0's character handle (sub_00070F20) */
-    if (h && MEM32(0x3BDCF0 + h * 4) == self) g_sneak_seen = GetTickCount();
+    if (h && MEM32(0x3BDCF0 + h * 4) == self) {
+        g_sneak_seen = GetTickCount();
+        /* +0x4EC is only a copy: sub_0007C760 (the character's tick) copies it from sub_0006AC80's position, the
+         * type 0xB component of the object at +0x28 (sub_00080A10 -> sub_00211E60: entries of 8 bytes at +0xC,
+         * count at +8, key in the high word, component at entry + 4), its +0x5C. That is what moves. */
+        uint32_t box = MEM32(self + 0x28), comp = 0;
+        if (box) {
+            uint32_t e = MEM32(box + 0xC), cnt = MEM32(box + 8);
+            for (uint32_t i = 0; e && i < cnt && i < 64; i++)
+                if ((MEM32(e + i * 8) & 0xFFFF0000u) == 0xB0000u) { comp = MEM32(e + i * 8 + 4); break; }
+        }
+        g_player = self, g_player_comp = comp;
+    }
 }
-int hppoa_Sneaking(void)
+/* 60 fps: the Carpe Retractum ledge's moves at the console's 33 ms step, everything else at 60 (2026-11-16).
+ * The character's tick sub_00077C90 moves him each frame: dt = clock +0x54 - +0x58 (sub_0001A640),
+ * sub_000CDFB0(controller = character +0x124, dt, &out) gives the new position, and the character's vtable +0x4C
+ * moves him there (with the collision; sub_000741A0 between them only keeps a speed history). At 60 his 3.2 unit steps
+ * stop half a unit short of the next box at each bend of the ledge (D_Sneak1); the 30 fps 6.5 unit step carries him
+ * in. So while the player wall sneaks in the challenge, every other frame's move is held (out = where he is, the move
+ * kept) and the next frame moves him by both: the collision sees the console's step, the frame rate, the camera and
+ * his animation stay at 60. Only within 40 units of the two bends: there his slide is updated 30 times a second
+ * (everywhere on the ledge it juddered; at the bends it got him round, user 2026-11-16). RECOMP_SNEAK_STEP=0 turns it off;
+ * [STEP] logs. It replaced a whole-frame 30 fps fallback while sneaking there and a widening of the boxes' faces,
+ * which never found the loaded collision. */
+static int sneak_step_on(void)
 {
     static int on = -1;
     if (on < 0) {
-        const char *e = getenv("RECOMP_SNEAK_30");
+        const char *e = getenv("RECOMP_SNEAK_STEP");
         on = !(e && e[0] == '0');
     }
-    static int was;
-    int now = on && g_sneak_seen && GetTickCount() - g_sneak_seen < 150 && in_carpe_retractum();
-    if (now != was) {
-        fprintf(stderr, "[SNEAK30] %s\n", now ? "wall sneak: 30 fps as on the console" : "wall sneak over: back to 60 fps");
-        was = now;
+    return on;
+}
+
+extern void sub_000CDFB0_gen(void);
+void sub_000CDFB0(void)
+{
+    static float acc[3];
+    static int hold, held, active;
+    uint32_t self = g_ecx, ret = MEM32(g_esp), out = MEM32(g_esp + 8);
+    uint32_t player = g_player, comp = g_player_comp;
+    sub_000CDFB0_gen();
+    if (!player || !comp || self != MEM32(player + 0x124) || (ret != 0x00077EE7u && ret != 0x00077E8Cu)) return;
+    /* only near the ledge's two bends (where he stopped at 60: x 1688 z 1502.2, x 1503 z 1687.6; the snap onto the
+     * bend starts about 26 units before): held moves elsewhere made his slide judder against the 60 fps camera */
+    float px = MEMF(comp + 0x5C), pz = MEMF(comp + 0x64);
+    float da = (px - 1688.0f) * (px - 1688.0f) + (pz - 1502.2f) * (pz - 1502.2f);
+    float db = (px - 1503.0f) * (px - 1503.0f) + (pz - 1687.6f) * (pz - 1687.6f);
+    int near_bend = da < 40.0f * 40.0f || db < 40.0f * 40.0f;
+    int now = sneak_step_on() && near_bend && GetTickCount() - g_sneak_seen < 150 && in_carpe_retractum();
+    if (now != active) {
+        fprintf(stderr, "[STEP] %s\n", now ? "Carpe ledge bend: moves at the console's 33 ms step, the rest at 60"
+                                           : "past the bend: moves every frame again");
+        active = now;
     }
-    return now;
+    if (!now) {
+        if (held) {  /* a move held when the sneak ended: give it back */
+            for (int i = 0; i < 3; i++) MEMF(out + i * 4) += acc[i], acc[i] = 0;
+            held = 0;
+        }
+        hold = 0;
+        return;
+    }
+    uint32_t pos = comp + 0x5C;  /* sub_0006AC80: where he is now */
+    if (!hold) {
+        for (int i = 0; i < 3; i++) acc[i] = MEMF(out + i * 4) - MEMF(pos + i * 4), MEMF(out + i * 4) = MEMF(pos + i * 4);
+        held = 1;
+    } else {
+        for (int i = 0; i < 3; i++) MEMF(out + i * 4) += acc[i], acc[i] = 0;
+        held = 0;
+    }
+    hold = !hold;
 }
 
 #define SNEAK_WRAP(addr, helper)                                        \

@@ -206,7 +206,6 @@ void SetComplex(uint32_t rs, uint32_t v) {
 // frame pacing on the runtime's vblank counter (kernel_bridge.c, 59.94 Hz): Swap returns once g_interval vblanks have
 // passed since the last one, as the console flips at a vblank. A title that already waited for one
 // (BlockUntilVerticalBlank) then swaps at once; a separate grid here made such a frame take two vblanks (30 fps menu).
-extern "C" int hppoa_Sneaking(void);  // hle_debug.c: the player is wall sneaking (paced at 30 fps)
 extern "C" void hppoa_TurningTick(void);  // hle_trainer.c: the turn speeds F10's Turning response asks for
 void WaitVblank(uint32_t since, uint32_t count) {
     for (int guard = 0; xbox_Nv2aVblankCount() - since < count && guard < 200; guard++) Sleep(1);
@@ -217,8 +216,6 @@ void Pace() {
     // xboxrecomp: the 30 fps limit (fps_limit) shows each frame for two vblanks at least, as a title asking for
     // D3DPRESENT_INTERVAL_TWO does
     uint32_t n = std::max<uint32_t>(g_interval, app::Get().fps_limit == 30 ? 2 : 1);
-    // xboxrecomp (hppoa): the wall sneak at the console's 30 fps (hle_debug.c), with hle_clock.c's 33 ms step
-    if (hppoa_Sneaking()) n = std::max<uint32_t>(n, 2);
     uint32_t now = xbox_Nv2aVblankCount();
     if (now - last < n) WaitVblank(last, n);
     last = xbox_Nv2aVblankCount();

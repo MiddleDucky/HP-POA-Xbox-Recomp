@@ -34,7 +34,6 @@
 
 uint32_t hppoa_FrameRate(void);  /* app.cpp: 30 or 60 */
 uint32_t hppoa_SwapCount(void);  /* hle_d3d8.cpp: frames presented */
-int hppoa_Sneaking(void);         /* hle_debug.c: the player is wall sneaking, run at 30 fps */
 static uint32_t g_min_title;     /* the clock's minimum step as the title set it (33 ms NTSC, 40 PAL) */
 
 /* a class's +0x18 setter (__thiscall, ecx = object, [esp+4] = value); the game clock's minimum step among them */
@@ -163,11 +162,8 @@ void hppoa_ClockBeforeTick(uint32_t clk)
         g_loading = 0;
         if (g_min_title && hppoa_FrameRate() < 60) MEM32(clk + 0x18) = g_min_title;
     }
-    /* the wall sneak at 30 fps (hle_debug.c): the title's own minimum step while it lasts, one 60 Hz frame after */
-    if (hppoa_FrameRate() >= 60 && g_min_title > 1000 / 60) {
-        uint32_t want = hppoa_Sneaking() ? g_min_title : 1000 / 60;
-        if (MEM32(clk + 0x18) != want) MEM32(clk + 0x18) = want;
-    }
+    /* at 60 fps the minimum step is one 60 Hz frame */
+    if (hppoa_FrameRate() >= 60 && g_min_title > 1000 / 60 && MEM32(clk + 0x18) != 1000 / 60) MEM32(clk + 0x18) = 1000 / 60;
     if (g_loading) MEM32(clk + 0x18) = 1;
     if (!g_fixed || g_fixed > 10000) return;
     uint32_t step = g_fixed;
