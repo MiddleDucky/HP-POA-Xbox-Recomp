@@ -3,6 +3,10 @@
 A native Windows port of the original Xbox game, made by **static recompilation**: the game's own code, translated
 to run directly on a PC, with a new DirectX 12 renderer, sound and input in place of the console's.
 
+**Please note: This is not by any means completed work. I'm still actively working on this and do appreciate any feedback that will make this project better.
+As such, while the games are playing from start to finish with no crashes (hopefully) some issues may arise (missing lighting, 4:3 buttons instead of 16:9 etc.). 
+If you do notice something that doesn't look right, please raise it as an issue and I'll be more than happy to fix it.**
+
 > **No game data is included.** You need the files from your own copy of the Xbox disc: North American (NTSC-U) or
 > European (PAL).
 
